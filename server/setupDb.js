@@ -1,7 +1,5 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
-const fs = require('fs');
-const path = require('path');
 
 async function setupDatabase() {
     console.log('🚀 Setting up Database...');
@@ -9,25 +7,25 @@ async function setupDatabase() {
     const config = {
         host: '127.0.0.1',
         user: process.env.DB_USER || 'smartstock',
-        // FIX: Check undefined specifically to allow empty string password
         password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : 'smartstock_pass',
         multipleStatements: true
     };
 
+    const schemaSql = [
+        "CREATE TABLE IF NOT EXISTS inventory (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255), sku VARCHAR(100), category VARCHAR(100), quantity INT, base_unit VARCHAR(50), alternative_units LONGTEXT, min_level INT, unit_price DECIMAL(15,2), location VARCHAR(100), last_updated DATETIME)",
+        "CREATE TABLE IF NOT EXISTS transactions (id VARCHAR(50) PRIMARY KEY, date DATE, type VARCHAR(20), items LONGTEXT, notes TEXT, timestamp DATETIME, supplier_name VARCHAR(255), po_number VARCHAR(100), ri_number VARCHAR(100), photos LONGTEXT)",
+        "CREATE TABLE IF NOT EXISTS suppliers (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255), contact_person VARCHAR(255), email VARCHAR(255), phone VARCHAR(50), address TEXT)",
+        "CREATE TABLE IF NOT EXISTS users (id VARCHAR(50) PRIMARY KEY, name VARCHAR(255), email VARCHAR(255), role VARCHAR(50), status VARCHAR(50), last_login DATETIME)",
+        "CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(100) PRIMARY KEY, setting_value LONGTEXT)"
+    ].join('; ');
+
     try {
         const connection = await mysql.createConnection(config);
         
-        const schemaPath = path.join(__dirname, 'schema.sql');
-        
-        if (!fs.existsSync(schemaPath)) {
-            throw new Error("schema.sql not found!");
-        }
-
-        const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-        
-        // Create DB first if it doesn't exist
-        await connection.query(`CREATE DATABASE IF NOT EXISTS ${process.env.DB_NAME || 'smartstock_db'}`);
-        await connection.query(`USE ${process.env.DB_NAME || 'smartstock_db'}`);
+        const dbName = process.env.DB_NAME || 'smartstock_db';
+        // Use string concatenation to avoid template literal issues in shell scripts
+        await connection.query('CREATE DATABASE IF NOT EXISTS ' + dbName);
+        await connection.query('USE ' + dbName);
 
         console.log('📂 Applying schema...');
         await connection.query(schemaSql);
