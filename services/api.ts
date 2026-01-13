@@ -20,8 +20,7 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     const isGas = baseUrl.includes('script.google.com');
     
     // Logic URL construction:
-    // If baseUrl is '/', we want '/api/data' (Relative path for Proxy)
-    // If baseUrl is 'http://...', we want 'http://.../api/data'
+    // Ensure no double slashes and correct prefix
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     const url = isGas ? baseUrl : `${cleanBase}/api/data`;
 
@@ -36,7 +35,7 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     
     if (response.status === 404) {
          console.error(`❌ 404 Not Found at: ${url}`);
-         throw new Error(`Server endpoint not found (404). Please check if backend server is running and routes are defined.`);
+         throw new Error(`Endpoint not found (404) at: ${url}. Check server routes.`);
     }
 
     if (!response.ok) {
@@ -54,7 +53,7 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     }
   } catch (error) {
     console.error("❌ Network/Connection Error:", error);
-    return null;
+    throw error; // Re-throw to let UI handle it
   }
 };
 
@@ -81,7 +80,7 @@ export const syncBackendData = async (
     });
 
     if (response.status === 404) {
-        return { success: false, message: 'Server endpoint (sync) not found (404).' };
+        return { success: false, message: `Sync endpoint not found (404) at ${url}` };
     }
 
     if (!response.ok) {
@@ -98,12 +97,11 @@ export const syncBackendData = async (
   } catch (error: any) {
     console.error(`Error syncing ${type}:`, error);
     
-    // Friendly error message for Mixed Content or Connection Refused
     if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
          if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
-             return { success: false, message: 'BLOCKED: Browser blocked HTTP connection. Please set URL to "/" in Admin Panel.' };
+             return { success: false, message: 'BLOCKED: Browser blocked HTTP. Use "/" in Admin Panel.' };
          }
-         return { success: false, message: 'Connection refused. Is the server running? Check VPS Firewall.' };
+         return { success: false, message: 'Connection refused. Check VPS Firewall.' };
     }
     
     return { success: false, message: error.message || 'Network error' };

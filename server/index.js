@@ -8,21 +8,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({ origin: '*' })); // Allow frontend to access
+app.use(cors({ origin: '*' })); // Allow all origins
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Logging Request untuk Debugging
+// Logging Middleware
 app.use((req, res, next) => {
-    console.log(`[${new Date().toLocaleTimeString()}] 📡 ${req.method} ${req.url}`);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
 });
 
-// Database Connection Pool
+// Database Connection
 const pool = mysql.createPool({
     host: process.env.DB_HOST || '127.0.0.1',
     user: process.env.DB_USER || 'smartstock',
-    // FIX: Check undefined specifically to allow empty string password
     password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : 'smartstock_pass',
     database: process.env.DB_NAME || 'smartstock_db',
     waitForConnections: true,
@@ -30,40 +29,16 @@ const pool = mysql.createPool({
     queueLimit: 0
 });
 
-// --- HELPER FUNCTIONS ---
-// Convert snake_case (DB) to camelCase (Frontend)
-const toCamel = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
-// Convert camelCase (Frontend) to snake_case (DB)
-const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-
-// Format Row Helper (Parse JSON fields automatically)
-const formatRow = (row) => {
-    const newRow = {};
-    for (const key in row) {
-        const camelKey = toCamel(key);
-        let val = row[key];
-        
-        // Handle JSON fields safely
-        if (['alternativeUnits', 'items', 'photos'].includes(camelKey) && typeof val === 'string') {
-            try { val = JSON.parse(val); } catch (e) { val = []; }
-        }
-        
-        newRow[camelKey] = val;
-    }
-    return newRow;
-};
-
 // --- ROUTES ---
 
-// 1. Root Check
+// 1. Root Route (Health Check)
 app.get('/', (req, res) => {
-    res.send('✅ SmartStock Backend is Running!');
+    res.send('✅ SmartStock Backend is Running on Port ' + PORT);
 });
 
-// 2. Get All Data
+// 2. Main Data Endpoint
 app.get('/api/data', async (req, res) => {
     try {
-        console.log("📥 Fetching all data...");
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -74,13 +49,26 @@ app.get('/api/data', async (req, res) => {
         settingsRows.forEach(row => {
             let val = row.setting_value;
             try { 
-                // Try parse if it looks like JSON array/object
                 if (val && (val.startsWith('[') || val.startsWith('{'))) {
                     val = JSON.parse(val); 
                 }
             } catch (e) {}
             settings[row.setting_key] = val;
         });
+
+        // Helper to format rows
+        const formatRow = (row) => {
+            const newRow = {};
+            for (const key in row) {
+                const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase()); // snake to camel
+                let val = row[key];
+                if (['alternativeUnits', 'items', 'photos'].includes(camelKey) && typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch (e) { val = []; }
+                }
+                newRow[camelKey] = val;
+            }
+            return newRow;
+        };
 
         res.json({
             status: 'success',
@@ -93,15 +81,14 @@ app.get('/api/data', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("❌ Fetch Error:", error.message);
+        console.error("Fetch Error:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// 3. Sync Data (Save)
+// 3. Sync Endpoint
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
-    console.log(`💾 Syncing table: ${type}`);
     
     if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing type or data' });
 
@@ -109,6 +96,9 @@ app.post('/api/sync', async (req, res) => {
     try {
         await connection.beginTransaction();
         
+        // Helper: camel to snake
+        const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+
         if (type === 'settings') {
              await connection.query('DELETE FROM settings');
              if (Object.keys(data).length > 0) {
@@ -125,15 +115,12 @@ app.post('/api/sync', async (req, res) => {
             const allowedTables = ['inventory', 'transactions', 'suppliers', 'users'];
             if (!allowedTables.includes(type)) throw new Error(`Invalid table name: ${type}`);
 
-            // Full Replace Strategy (Delete All -> Insert All) for simplicity in sync mode
             await connection.query(`DELETE FROM ${type}`);
 
             if (data.length > 0) {
-                // Determine columns dynamically from the first item
                 const firstItem = data[0];
                 const camelKeys = Object.keys(firstItem);
                 const snakeKeys = camelKeys.map(toSnake);
-                
                 const placeholders = snakeKeys.map(() => '?').join(', ');
                 const sql = `INSERT INTO ${type} (${snakeKeys.join(', ')}) VALUES (${placeholders})`;
 
@@ -153,15 +140,21 @@ app.post('/api/sync', async (req, res) => {
         res.json({ status: 'success' });
     } catch (error) {
         await connection.rollback();
-        console.error("❌ Sync Error:", error.message);
+        console.error("Sync Error:", error);
         res.status(500).json({ status: 'error', message: error.message });
     } finally {
         connection.release();
     }
 });
 
-// Start Server
+// 4. Fallback for 404
+app.use((req, res) => {
+    res.status(404).json({ status: 'error', message: `Route not found: ${req.url}` });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`👉 Local: http://localhost:${PORT}`);
+    console.log(`\n🚀 Server running on port ${PORT}`);
+    console.log(`   - http://localhost:${PORT}`);
+    console.log(`   - http://127.0.0.1:${PORT}`);
+    console.log('Routes: GET /, GET /api/data, POST /api/sync\n');
 });

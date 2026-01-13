@@ -12,7 +12,7 @@ import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Boxes, Bell, ArrowRightLeft, History, Users, Settings as SettingsIcon, RefreshCw, Save as SaveIcon, ChevronDown, User as UserIcon, Menu, X, Cloud, CloudOff, PlugZap } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Boxes, Bell, ArrowRightLeft, History, Users, Settings as SettingsIcon, RefreshCw, Save as SaveIcon, ChevronDown, User as UserIcon, Menu, X, Cloud, CloudOff, PlugZap, RotateCcw } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- Global State ---
@@ -61,9 +61,9 @@ const App: React.FC = () => {
       // 1. Load Local First (Fast)
       let localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
       
-      // AUTO-FIX: Force update if URL is outdated/localhost but we need VPS
-      if (!localSettings.viteGasUrl || localSettings.viteGasUrl === '/' || localSettings.viteGasUrl.includes('localhost')) {
-          console.log("🔄 Auto-correcting backend URL to VPS...");
+      // AUTO-FIX (Less aggressive): Only suggest VPS if URL is missing
+      if (!localSettings.viteGasUrl) {
+          console.log("Using Default VPS URL");
           localSettings.viteGasUrl = 'http://157.245.59.65:3000';
           saveToStorage('smartstock_settings', localSettings);
       }
@@ -78,34 +78,38 @@ const App: React.FC = () => {
       // 2. If API URL exists, Try Cloud Sync
       if (localSettings.viteGasUrl) {
          showToast(`Connecting to ${localSettings.viteGasUrl}...`, "info");
-         const cloudData = await fetchBackendData(localSettings.viteGasUrl);
-         
-         if (cloudData) {
-            setIsCloudConnected(true);
-            setItems(cloudData.inventory || []);
-            setTransactions(cloudData.transactions || []);
-            setSuppliers(cloudData.suppliers || []);
-            setUsers(cloudData.users || []);
+         try {
+            const cloudData = await fetchBackendData(localSettings.viteGasUrl);
             
-            // Merge settings carefully
-            setSettings(prev => ({
-                ...prev,
-                ...cloudData.settings,
-                // Ensure we keep the URL if the backend returned something empty
-                viteGasUrl: localSettings.viteGasUrl, 
-                mediaItems: (cloudData.settings as any)?.mediaItems || prev.mediaItems
-            }));
+            if (cloudData) {
+                setIsCloudConnected(true);
+                setItems(cloudData.inventory || []);
+                setTransactions(cloudData.transactions || []);
+                setSuppliers(cloudData.suppliers || []);
+                setUsers(cloudData.users || []);
+                
+                // Merge settings
+                setSettings(prev => ({
+                    ...prev,
+                    ...cloudData.settings,
+                    viteGasUrl: localSettings.viteGasUrl, 
+                    mediaItems: (cloudData.settings as any)?.mediaItems || prev.mediaItems
+                }));
 
-            showToast("Data synced with VPS!", "success");
-            setLastSyncError(null);
-         } else {
+                showToast("Data synced with VPS!", "success");
+                setLastSyncError(null);
+            } else {
+                throw new Error("Empty response from server");
+            }
+         } catch(e: any) {
             setIsCloudConnected(false);
-            setLastSyncError("Connection refused. Check VPS Firewall or URL.");
-            showToast("Cloud sync failed. Using local data.", "warning");
+            const msg = e.message || "Connection failed";
+            setLastSyncError(msg);
+            showToast(`Sync Failed: ${msg}`, "error");
          }
       }
     } catch (error) {
-      showToast('Failed to load data', 'error');
+      showToast('Failed to load local data', 'error');
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -214,6 +218,14 @@ const App: React.FC = () => {
       setSettings(prev => ({ ...prev, viteGasUrl: vpsUrl }));
       saveToStorage('smartstock_settings', { ...settings, viteGasUrl: vpsUrl });
       window.location.reload(); // Hard reload to force fetch
+  };
+
+  // --- Reset to Proxy Handler ---
+  const handleResetConnection = () => {
+      const proxyUrl = '/';
+      setSettings(prev => ({ ...prev, viteGasUrl: proxyUrl }));
+      saveToStorage('smartstock_settings', { ...settings, viteGasUrl: proxyUrl });
+      window.location.reload();
   };
 
   // --- Role Switcher ---
@@ -538,14 +550,27 @@ const App: React.FC = () => {
                     </div>
                 )}
                 
-                {/* Auto Fix Button if Offline */}
-                {!isCloudConnected && (
+                {/* Reset Connection Button (To Proxy) */}
+                {!isCloudConnected && settings.viteGasUrl !== '/' && (
+                    <button 
+                        onClick={handleResetConnection}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-200 text-slate-700 rounded-full text-xs font-medium hover:bg-slate-300 shadow-sm"
+                        title="Reset to local Proxy (default)"
+                    >
+                        <RotateCcw className="w-3 h-3" />
+                        Reset Conn
+                    </button>
+                )}
+
+                {/* Force VPS Button */}
+                {!isCloudConnected && settings.viteGasUrl === '/' && (
                     <button 
                         onClick={handleForceConnect}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-medium hover:bg-blue-700 shadow-sm"
+                        title="Force connect to IP"
                     >
                         <PlugZap className="w-3 h-3" />
-                        Force Connect VPS
+                        Connect VPS
                     </button>
                 )}
 
@@ -587,6 +612,9 @@ const App: React.FC = () => {
              <div className="mx-4 md:mx-8 mb-4 bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
                 <CloudOff className="w-4 h-4 flex-shrink-0" />
                 <span className="font-bold">Sync Error:</span> {lastSyncError}
+                <button onClick={handleResetConnection} className="ml-auto text-xs underline hover:text-rose-900">
+                    Reset Settings
+                </button>
             </div>
         )}
 
