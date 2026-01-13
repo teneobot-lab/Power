@@ -9,7 +9,9 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json({ limit: '50mb' })); // Increased limit for base64 photos
+// Increase limit significantly for Base64 image sync
+app.use(bodyParser.json({ limit: '50mb' }));
+app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
 // MySQL Connection Pool
 const pool = mysql.createPool({
@@ -20,7 +22,7 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    timezone: '+00:00' // Handle dates consistently
+    timezone: '+00:00'
 });
 
 // Helper: Convert Snake Case (DB) to Camel Case (Frontend)
@@ -29,7 +31,7 @@ const toCamel = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
 // Helper: Convert Camel Case (Frontend) to Snake Case (DB)
 const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 
-// Format Row Helper
+// Format Row Helper (DB -> Frontend)
 const formatRow = (row) => {
     const newRow = {};
     for (const key in row) {
@@ -51,7 +53,7 @@ app.get('/', (req, res) => {
     res.send('SmartStock API is running...');
 });
 
-// GET All Data (Replaces doGet)
+// GET All Data
 app.get('/api/data', async (req, res) => {
     try {
         const [inventory] = await pool.query('SELECT * FROM inventory');
@@ -84,7 +86,7 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
-// SYNC Data (Replaces doPost)
+// SYNC Data
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
     
@@ -96,7 +98,7 @@ app.post('/api/sync', async (req, res) => {
     try {
         await connection.beginTransaction();
 
-        // 1. Special handling for Settings
+        // 1. Handling Settings (Key-Value Store)
         if (type === 'settings') {
             await connection.query('DELETE FROM settings'); // Clear old settings
             if (Object.keys(data).length > 0) {
@@ -108,37 +110,49 @@ app.post('/api/sync', async (req, res) => {
                 await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
             }
         } 
-        // 2. Generic handling for other tables (Inventory, Transactions, etc.)
+        // 2. Generic Handling for Arrays (Inventory, Transactions, etc.)
         else {
-            const tableName = type; // Ensure this matches table names exactly or map it
-            
-            // Validation: Simple whitelist check
+            const tableName = type; 
             const allowedTables = ['inventory', 'transactions', 'suppliers', 'users'];
             if (!allowedTables.includes(tableName)) {
                  throw new Error(`Invalid table name: ${tableName}`);
             }
 
-            // Sync Strategy: Delete All & Insert New (Matches Frontend Logic)
+            // Sync Strategy: Full Replace (Delete All & Insert New) to ensure consistency with Frontend state
             await connection.query(`DELETE FROM ${tableName}`);
 
             if (data.length > 0) {
-                // Get columns from first item
-                const sample = data[0];
-                const columns = Object.keys(sample).map(toSnake);
-                const placeholders = columns.map(() => '?').join(', ');
+                // Find all possible keys across all objects in the data array
+                // This is crucial because some objects might be missing optional keys (e.g. supplierName in outbound tx)
+                const allKeys = new Set();
+                data.forEach(item => {
+                    Object.keys(item).forEach(k => allKeys.add(k));
+                });
                 
-                const sql = `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${placeholders})`;
+                const columnsCamel = Array.from(allKeys);
+                const columnsSnake = columnsCamel.map(toSnake);
+                
+                if (columnsSnake.length > 0) {
+                    const placeholders = columnsSnake.map(() => '?').join(', ');
+                    const sql = `INSERT INTO ${tableName} (${columnsSnake.join(', ')}) VALUES (${placeholders})`;
 
-                for (const item of data) {
-                    const values = Object.keys(sample).map(key => {
-                        let val = item[key];
-                        if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
-                        if (val === undefined) val = null;
-                        // Format JS Date to MySQL Datetime
-                        if (val instanceof Date) val = val.toISOString().slice(0, 19).replace('T', ' ');
-                        return val;
-                    });
-                    await connection.query(sql, values);
+                    for (const item of data) {
+                        const values = columnsCamel.map(key => {
+                            let val = item[key];
+                            
+                            // Convert Objects/Arrays to JSON string
+                            if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+                            
+                            // Handle undefined/null
+                            if (val === undefined) val = null;
+                            
+                            // Format JS Date to MySQL Datetime
+                            if (val instanceof Date) val = val.toISOString().slice(0, 19).replace('T', ' ');
+                            
+                            return val;
+                        });
+                        await connection.query(sql, values);
+                    }
                 }
             }
         }
