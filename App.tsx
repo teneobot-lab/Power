@@ -696,15 +696,18 @@ const App: React.FC = () => {
                     />
                 )}
 
-                {currentView === AppView.ADMIN && currentUser.role === 'admin' && (
-                    <AdminPanel 
-                    settings={settings}
-                    onUpdateSettings={updateSettings}
-                    users={users}
-                    onAddUser={addUser}
-                    onUpdateUser={updateUser}
-                    onDeleteUser={deleteUser}
-                    />
+                {/* Modified: Persist AdminPanel in DOM to allow background media playback */}
+                {currentUser.role === 'admin' && (
+                    <div className={currentView === AppView.ADMIN ? 'h-full' : 'fixed top-0 left-0 w-px h-px opacity-0 overflow-hidden pointer-events-none'}>
+                        <AdminPanel 
+                            settings={settings}
+                            onUpdateSettings={updateSettings}
+                            users={users}
+                            onAddUser={addUser}
+                            onUpdateUser={updateUser}
+                            onDeleteUser={deleteUser}
+                        />
+                    </div>
                 )}
                 
                 {currentView === AppView.AI_ASSISTANT && (
