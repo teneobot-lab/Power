@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, UnitDefinition, UserRole, TableColumn } from '../types';
 import { CATEGORIES } from '../constants';
+import { generateId } from '../utils/storageUtils';
 import { Search, Plus, Filter, Edit2, Trash2, AlertCircle, X, Layers, Eye, Columns } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
@@ -143,7 +144,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     if (!validateForm()) return;
 
     const newItem: InventoryItem = {
-      id: editingItem ? editingItem.id : crypto.randomUUID(),
+      id: editingItem ? editingItem.id : generateId(),
       name: formData.name || '',
       sku: formData.sku || '',
       category: formData.category || CATEGORIES[0],

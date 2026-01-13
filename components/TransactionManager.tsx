@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier } from '../types';
+import { generateId } from '../utils/storageUtils';
 import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, Upload, Image as ImageIcon, Truck } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
@@ -199,18 +200,20 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
   // --- Photo Upload Logic ---
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
     if (e.target.files && e.target.files.length > 0) {
-      const files = Array.from(e.target.files);
       const newBase64s: string[] = [];
-
-      for (const file of files) {
-        const reader = new FileReader();
-        const base64Promise = new Promise<string>((resolve) => {
-          reader.onload = (readerEvent) => {
-             resolve(readerEvent.target?.result as string);
-          };
-        });
-        reader.readAsDataURL(file);
-        newBase64s.push(await base64Promise);
+      // Safe iteration for FileList
+      for (let i = 0; i < e.target.files.length; i++) {
+         const file = e.target.files.item(i);
+         if (file) {
+            const reader = new FileReader();
+            const base64Promise = new Promise<string>((resolve) => {
+              reader.onload = (readerEvent) => {
+                 resolve(readerEvent.target?.result as string);
+              };
+            });
+            reader.readAsDataURL(file);
+            newBase64s.push(await base64Promise);
+         }
       }
       
       if (target === 'new') {
@@ -233,7 +236,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     if (cartItems.length === 0) return;
 
     const transaction: Transaction = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       date,
       type,
       items: cartItems,

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Supplier, UserRole, TableColumn } from '../types';
+import { generateId } from '../utils/storageUtils';
 import { Search, Plus, Edit2, Trash2, MapPin, Phone, Mail, Building, X, Save, Columns } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
@@ -76,7 +77,7 @@ const SupplierManager: React.FC<SupplierManagerProps> = ({
     if (!formData.name) return;
 
     const supplierData: Supplier = {
-      id: editingSupplier ? editingSupplier.id : crypto.randomUUID(),
+      id: editingSupplier ? editingSupplier.id : generateId(),
       ...formData
     };
 
@@ -266,7 +267,7 @@ const SupplierManager: React.FC<SupplierManagerProps> = ({
                         className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:bg-slate-100"
                         placeholder="e.g. Tech Distributors Inc."
                         value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        onChange={e => setFormData({...formData,name: e.target.value})}
                         />
                     </div>
                     </div>

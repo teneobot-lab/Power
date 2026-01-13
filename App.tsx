@@ -11,7 +11,7 @@ import TransactionManager from './components/TransactionManager';
 import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
-import ToastContainer from './components/Toast.tsx';
+import ToastContainer from './components/Toast';
 import { LayoutDashboard, Package, Bot, Boxes, Bell, ArrowRightLeft, History, Users, Settings as SettingsIcon, RefreshCw, Save as SaveIcon, ChevronDown, User as UserIcon, Menu, X, Cloud, CloudOff } from 'lucide-react';
 
 const App: React.FC = () => {

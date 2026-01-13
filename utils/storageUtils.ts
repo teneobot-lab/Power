@@ -32,3 +32,15 @@ export const clearStorage = (key: string) => {
     console.error(`Error clearing ${key}:`, error);
   }
 };
+
+export const generateId = (): string => {
+  // Fallback for environments where crypto is not available (e.g. non-https preview)
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback UUID-like generator
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};

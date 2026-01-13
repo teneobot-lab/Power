@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
+import { generateId } from '../utils/storageUtils';
 import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Key, Link, Check, MonitorPlay, Youtube, Video, ExternalLink, ArrowLeft, Play, ListVideo, Search } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -78,7 +79,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
 
     const newMedia: MediaItem = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: extraction.type,
         url: mediaUrl,
         embedId: extraction.id,
@@ -143,7 +144,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     if (!userFormData.name || !userFormData.email) return;
 
     const newUser: User = {
-      id: editingUser ? editingUser.id : crypto.randomUUID(),
+      id: editingUser ? editingUser.id : generateId(),
       name: userFormData.name || '',
       email: userFormData.email || '',
       role: (userFormData.role as UserRole) || 'staff',
