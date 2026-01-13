@@ -7,39 +7,47 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({ origin: '*' }));
+// Middleware
+app.use(cors({ origin: '*' })); // Allow frontend to access
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// Logging Request
+// Logging Request untuk Debugging
 app.use((req, res, next) => {
     console.log(`[${new Date().toLocaleTimeString()}] 📡 ${req.method} ${req.url}`);
     next();
 });
 
+// Database Connection Pool
 const pool = mysql.createPool({
-    host: '127.0.0.1',
+    host: process.env.DB_HOST || '127.0.0.1',
     user: process.env.DB_USER || 'smartstock',
-    password: process.env.DB_PASSWORD || 'smartstock_pass',
+    // FIX: Check undefined specifically to allow empty string password
+    password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : 'smartstock_pass',
     database: process.env.DB_NAME || 'smartstock_db',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
 });
 
-// --- HELPERS ---
+// --- HELPER FUNCTIONS ---
+// Convert snake_case (DB) to camelCase (Frontend)
 const toCamel = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+// Convert camelCase (Frontend) to snake_case (DB)
 const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 
+// Format Row Helper (Parse JSON fields automatically)
 const formatRow = (row) => {
     const newRow = {};
     for (const key in row) {
         const camelKey = toCamel(key);
         let val = row[key];
-        // Parse JSON fields
+        
+        // Handle JSON fields safely
         if (['alternativeUnits', 'items', 'photos'].includes(camelKey) && typeof val === 'string') {
             try { val = JSON.parse(val); } catch (e) { val = []; }
         }
+        
         newRow[camelKey] = val;
     }
     return newRow;
@@ -47,10 +55,15 @@ const formatRow = (row) => {
 
 // --- ROUTES ---
 
-app.get('/', (req, res) => res.send('SmartStock API Running v2.0'));
+// 1. Root Check
+app.get('/', (req, res) => {
+    res.send('✅ SmartStock Backend is Running!');
+});
 
+// 2. Get All Data
 app.get('/api/data', async (req, res) => {
     try {
+        console.log("📥 Fetching all data...");
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -60,7 +73,12 @@ app.get('/api/data', async (req, res) => {
         const settings = {};
         settingsRows.forEach(row => {
             let val = row.setting_value;
-            try { val = JSON.parse(val); } catch (e) {}
+            try { 
+                // Try parse if it looks like JSON array/object
+                if (val && (val.startsWith('[') || val.startsWith('{'))) {
+                    val = JSON.parse(val); 
+                }
+            } catch (e) {}
             settings[row.setting_key] = val;
         });
 
@@ -80,10 +98,12 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
+// 3. Sync Data (Save)
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
+    console.log(`💾 Syncing table: ${type}`);
     
-    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing data' });
+    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing type or data' });
 
     const connection = await pool.getConnection();
     try {
@@ -97,18 +117,19 @@ app.post('/api/sync', async (req, res) => {
                     if (typeof val === 'object') val = JSON.stringify(val);
                     return [k, val];
                 });
-                await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
+                if(values.length > 0) {
+                    await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
+                }
              }
         } else {
-            const allowed = ['inventory', 'transactions', 'suppliers', 'users'];
-            if (!allowed.includes(type)) throw new Error("Invalid table");
+            const allowedTables = ['inventory', 'transactions', 'suppliers', 'users'];
+            if (!allowedTables.includes(type)) throw new Error(`Invalid table name: ${type}`);
 
-            // Full Replace Strategy (Simpler for sync)
+            // Full Replace Strategy (Delete All -> Insert All) for simplicity in sync mode
             await connection.query(`DELETE FROM ${type}`);
 
             if (data.length > 0) {
-                // Determine columns dynamically from first item
-                // Note: In production, hardcoding columns is safer, but this is dynamic for flexibility
+                // Determine columns dynamically from the first item
                 const firstItem = data[0];
                 const camelKeys = Object.keys(firstItem);
                 const snakeKeys = camelKeys.map(toSnake);
@@ -139,4 +160,8 @@ app.post('/api/sync', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+// Start Server
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`👉 Local: http://localhost:${PORT}`);
+});

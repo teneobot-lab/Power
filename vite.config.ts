@@ -7,14 +7,13 @@ export default defineConfig({
   server: {
     host: true, // Listen on all network interfaces
     port: 5173,
-    // Konfigurasi Proxy untuk Local Development
-    // Ini membuat request ke '/api' di localhost diteruskan ke VPS Anda
+    // Proxy configuration for Local Development
+    // This forwards '/api' requests to your local backend server
     proxy: {
       '/api': {
-        target: 'http://157.245.59.65:3000', // IP VPS Anda
+        target: 'http://localhost:3000', // Changed from specific IP to localhost
         changeOrigin: true,
         secure: false,
-        // Optional: Ensure path isn't modified unexpectedly
         rewrite: (path) => path 
       }
     }
