@@ -15,14 +15,28 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
   })));
 };
 
-// Helper to get AI Client
-const getClient = () => {
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to get AI Client safely
+const getClient = (apiKey?: string) => {
+  // Prioritize the key passed from App Settings (Admin Panel)
+  // We use a safe check for process.env to avoid "ReferenceError" in some browser environments
+  let finalKey = apiKey;
+
+  // Fallback to process.env if available (for development/deployment later)
+  if (!finalKey && typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    finalKey = process.env.API_KEY;
+  }
+
+  if (!finalKey) return null;
+  return new GoogleGenAI({ apiKey: finalKey });
 };
 
-export const getInventoryInsights = async (items: InventoryItem[], _apiKey?: string): Promise<string> => {
+export const getInventoryInsights = async (items: InventoryItem[], apiKey?: string): Promise<string> => {
   try {
-    const ai = getClient();
+    const ai = getClient(apiKey);
+    
+    if (!ai) {
+      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
+    }
     
     const inventoryData = formatInventoryContext(items);
     
@@ -44,18 +58,22 @@ export const getInventoryInsights = async (items: InventoryItem[], _apiKey?: str
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Please check your API Key configuration.";
+    return "Failed to generate insights. Please check if your API Key is valid in the Admin Panel.";
   }
 };
 
 export const chatWithInventoryBot = async (
   query: string, 
   items: InventoryItem[], 
-  _apiKey?: string,
+  apiKey?: string,
   history: {role: string, parts: {text: string}[]}[] = []
 ): Promise<string> => {
   try {
-    const ai = getClient();
+    const ai = getClient(apiKey);
+
+    if (!ai) {
+      return "I cannot reply because the API Key is missing. Please configure it in the Admin Panel.";
+    }
 
     const inventoryData = formatInventoryContext(items);
     
@@ -86,6 +104,6 @@ export const chatWithInventoryBot = async (
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting to the brain right now. Please check your API Key.";
+    return "Sorry, I'm having trouble connecting. Please verify your API Key in the Admin Panel.";
   }
 };
