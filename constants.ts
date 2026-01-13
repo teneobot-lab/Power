@@ -138,8 +138,8 @@ export const INITIAL_USERS: User[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
-  // FIX: Pre-fill with your VPS IP so you don't have to type it.
-  viteGasUrl: 'http://157.245.59.65:3000',
+  // FIX: Using relative path allows Vercel rewrite proxy to handle HTTP/HTTPS bridging
+  viteGasUrl: '', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: [
