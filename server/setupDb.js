@@ -4,30 +4,29 @@ const fs = require('fs');
 const path = require('path');
 
 async function setupDatabase() {
-    console.log('🚀 Starting Database Setup...');
+    console.log('🚀 Setting up Database...');
     
-    // STRICT FIX: Always use 127.0.0.1 for local VPS MySQL
-    const dbHost = '127.0.0.1';
-
-    console.log(`📡 Connecting to Database at ${dbHost}...`);
+    const config = {
+        host: '127.0.0.1',
+        user: process.env.DB_USER || 'smartstock',
+        password: process.env.DB_PASSWORD || 'smartstock_pass',
+        multipleStatements: true
+    };
 
     try {
-        const connection = await mysql.createConnection({
-            host: dbHost,
-            user: process.env.DB_USER || 'root',
-            password: process.env.DB_PASSWORD || '',
-            multipleStatements: true 
-        });
-
+        const connection = await mysql.createConnection(config);
+        
         const schemaPath = path.join(__dirname, 'schema.sql');
         const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-        console.log('📂 Reading schema.sql...');
+        
+        console.log('📂 Applying schema...');
         await connection.query(schemaSql);
-        console.log('✅ Database created successfully!');
+        
+        console.log('✅ Database setup complete!');
         await connection.end();
         process.exit();
     } catch (error) {
-        console.error('❌ Error:', error.message);
+        console.error('❌ DB Setup Error:', error.message);
         process.exit(1);
     }
 }

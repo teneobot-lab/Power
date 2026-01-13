@@ -11,34 +11,32 @@ app.use(cors({ origin: '*' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// --- LOGGING MIDDLEWARE ---
+// Logging Request
 app.use((req, res, next) => {
-    const timestamp = new Date().toLocaleTimeString();
-    console.log(`[${timestamp}] 📡 Incoming Request: ${req.method} ${req.url}`);
+    console.log(`[${new Date().toLocaleTimeString()}] 📡 ${req.method} ${req.url}`);
     next();
 });
 
-// STRICT FIX: Always use 127.0.0.1 for local VPS MySQL
-const dbHost = '127.0.0.1';
-
 const pool = mysql.createPool({
-    host: dbHost,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
+    host: '127.0.0.1',
+    user: process.env.DB_USER || 'smartstock',
+    password: process.env.DB_PASSWORD || 'smartstock_pass',
     database: process.env.DB_NAME || 'smartstock_db',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
 });
 
-// Helpers
+// --- HELPERS ---
 const toCamel = (str) => str.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
 const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+
 const formatRow = (row) => {
     const newRow = {};
     for (const key in row) {
         const camelKey = toCamel(key);
         let val = row[key];
+        // Parse JSON fields
         if (['alternativeUnits', 'items', 'photos'].includes(camelKey) && typeof val === 'string') {
             try { val = JSON.parse(val); } catch (e) { val = []; }
         }
@@ -49,18 +47,10 @@ const formatRow = (row) => {
 
 // --- ROUTES ---
 
-// Health Check
-app.get('/', (req, res) => {
-    res.status(200).send('SmartStock API Running. Endpoints: /api/data, /api/sync');
-});
+app.get('/', (req, res) => res.send('SmartStock API Running v2.0'));
 
-// Main Data Fetch
 app.get('/api/data', async (req, res) => {
     try {
-        console.log("🔄 Fetching all data...");
-        // Test connection first
-        await pool.query('SELECT 1');
-        
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -74,7 +64,6 @@ app.get('/api/data', async (req, res) => {
             settings[row.setting_key] = val;
         });
 
-        console.log("✅ Data fetched successfully");
         res.json({
             status: 'success',
             data: { 
@@ -86,15 +75,13 @@ app.get('/api/data', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("❌ Error fetching data:", error.message);
+        console.error("❌ Fetch Error:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Data Sync
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
-    console.log(`💾 Syncing data for: ${type}`);
     
     if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing data' });
 
@@ -113,48 +100,43 @@ app.post('/api/sync', async (req, res) => {
                 await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
              }
         } else {
-            const allowedTables = ['inventory', 'transactions', 'suppliers', 'users'];
-            if (!allowedTables.includes(type)) throw new Error("Invalid table: " + type);
+            const allowed = ['inventory', 'transactions', 'suppliers', 'users'];
+            if (!allowed.includes(type)) throw new Error("Invalid table");
 
+            // Full Replace Strategy (Simpler for sync)
             await connection.query(`DELETE FROM ${type}`);
+
             if (data.length > 0) {
-                const allKeys = new Set();
-                data.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
-                const colsCamel = Array.from(allKeys);
-                const colsSnake = colsCamel.map(toSnake);
+                // Determine columns dynamically from first item
+                // Note: In production, hardcoding columns is safer, but this is dynamic for flexibility
+                const firstItem = data[0];
+                const camelKeys = Object.keys(firstItem);
+                const snakeKeys = camelKeys.map(toSnake);
                 
-                if (colsSnake.length > 0) {
-                    const placeholders = colsSnake.map(() => '?').join(', ');
-                    const sql = `INSERT INTO ${type} (${colsSnake.join(', ')}) VALUES (${placeholders})`;
-                    for (const item of data) {
-                        const values = colsCamel.map(key => {
-                            let val = item[key];
-                            if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
-                            if (val === undefined) val = null;
-                            if (val instanceof Date) val = val.toISOString().slice(0, 19).replace('T', ' ');
-                            return val;
-                        });
-                        await connection.query(sql, values);
-                    }
+                const placeholders = snakeKeys.map(() => '?').join(', ');
+                const sql = `INSERT INTO ${type} (${snakeKeys.join(', ')}) VALUES (${placeholders})`;
+
+                for (const item of data) {
+                    const values = camelKeys.map(key => {
+                        let val = item[key];
+                        if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+                        if (val === undefined) val = null;
+                        if (val instanceof Date) val = val.toISOString().slice(0, 19).replace('T', ' ');
+                        return val;
+                    });
+                    await connection.query(sql, values);
                 }
             }
         }
         await connection.commit();
-        console.log("✅ Sync successful");
         res.json({ status: 'success' });
     } catch (error) {
         await connection.rollback();
-        console.error("❌ Sync failed:", error.message);
+        console.error("❌ Sync Error:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     } finally {
         connection.release();
     }
-});
-
-// 404 Handler - MUST BE LAST
-app.use((req, res) => {
-    console.warn(`⚠️ 404 Route Not Found: ${req.method} ${req.url}`);
-    res.status(404).json({ status: 'error', message: `Route not found: ${req.url}` });
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
