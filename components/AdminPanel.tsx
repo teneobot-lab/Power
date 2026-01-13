@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Key, Link, Check, MonitorPlay, Youtube, Video, ExternalLink, ArrowLeft, Play, ListVideo, Search, AlertTriangle } from 'lucide-react';
+import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Key, Link, Check, MonitorPlay, Youtube, Video, ExternalLink, ArrowLeft, Play, ListVideo, Search, AlertTriangle, CloudLightning } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -45,6 +45,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     onUpdateSettings(tempSettings);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+  };
+
+  const handleUseVercelProxy = () => {
+    setTempSettings(prev => ({ ...prev, viteGasUrl: '/' }));
   };
 
   // --- Media Handlers ---
@@ -261,7 +265,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Vite / Backend Gas URL</label>
+                    <div className="flex justify-between items-center mb-2">
+                         <label className="block text-sm font-medium text-slate-700">Backend / API URL</label>
+                         <button 
+                            onClick={handleUseVercelProxy}
+                            className="text-xs flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                         >
+                            <CloudLightning className="w-3 h-3" />
+                            Use Vercel Proxy (Auto)
+                         </button>
+                    </div>
                     <div className="relative">
                       <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Link className="h-4 w-4 text-slate-400" />
@@ -269,22 +282,34 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                       <input
                         type="url"
                         className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        placeholder="http://IP_ADDRESS:3000"
+                        placeholder="http://IP_ADDRESS:3000 (or / for Proxy)"
                         value={tempSettings.viteGasUrl}
                         onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})}
                       />
                     </div>
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Endpoint for backend synchronization (Node.js VPS or Google Apps Script).
+                      Enter <code>/</code> (slash) if deploying on Vercel to use the internal proxy. Do not use <code>http://...</code> on Vercel/HTTPS.
                     </p>
                     
+                    {/* Visual Helper for Vercel Proxy */}
+                    {tempSettings.viteGasUrl === '/' && (
+                        <div className="mt-2 flex items-start gap-2 bg-emerald-50 text-emerald-800 p-2 rounded text-xs border border-emerald-100">
+                            <Check className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>
+                                <strong>Proxy Mode Active:</strong> Great! The app will connect using the relative <code>/api</code> path. 
+                                Make sure your <code>vercel.json</code> is configured with the correct VPS IP.
+                            </p>
+                        </div>
+                    )}
+
                     {/* Mixed Content Warning */}
                     {window.location.protocol === 'https:' && tempSettings.viteGasUrl.startsWith('http:') && (
-                        <div className="mt-2 flex items-start gap-2 bg-amber-50 text-amber-800 p-2 rounded text-xs">
+                        <div className="mt-2 flex items-start gap-2 bg-amber-50 text-amber-800 p-2 rounded text-xs border border-amber-100">
                             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                             <p>
-                                <strong>Warning:</strong> You are on HTTPS (Vercel) but trying to connect to HTTP. 
-                                Browsers will block this connection (Mixed Content). You must either use HTTPS for your backend or test on localhost.
+                                <strong>Warning:</strong> You are on HTTPS (Vercel) but entered an HTTP address. 
+                                This will likely fail due to browser security (Mixed Content). 
+                                <u>Please click "Use Vercel Proxy" above instead.</u>
                             </p>
                         </div>
                     )}

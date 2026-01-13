@@ -18,7 +18,14 @@ interface FullState {
 export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
   try {
     const isGas = baseUrl.includes('script.google.com');
-    const url = isGas ? baseUrl : `${baseUrl.replace(/\/$/, '')}/api/data`;
+    
+    // Logic URL construction:
+    // If baseUrl is '/', we want '/api/data' (Relative path for Proxy)
+    // If baseUrl is 'http://...', we want 'http://.../api/data'
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/data`;
+
+    console.log(`📡 Fetching data from: ${url}`);
 
     const response = await fetch(url, {
       method: 'GET',
@@ -34,13 +41,14 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     const json: ApiResponse<FullState> = await response.json();
     
     if (json.status === 'success' && json.data) {
+      console.log("✅ Backend connection successful");
       return json.data;
     } else {
-      console.error("Backend Error:", json.message);
+      console.error("❌ Backend Error (Logic):", json.message);
       return null;
     }
   } catch (error) {
-    console.error("Network Error fetching backend:", error);
+    console.error("❌ Network/Connection Error:", error);
     return null;
   }
 };
@@ -52,8 +60,10 @@ export const syncBackendData = async (
 ): Promise<{ success: boolean; message?: string }> => {
   try {
     const isGas = baseUrl.includes('script.google.com');
-    // GAS uses single endpoint, Node uses /api/sync
-    const url = isGas ? baseUrl : `${baseUrl.replace(/\/$/, '')}/api/sync`;
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
+
+    console.log(`💾 Syncing ${type} to: ${url}`);
 
     const payload = JSON.stringify({ type, data });
     
@@ -79,12 +89,12 @@ export const syncBackendData = async (
   } catch (error: any) {
     console.error(`Error syncing ${type}:`, error);
     
-    // Friendly error message for Mixed Content
+    // Friendly error message for Mixed Content or Connection Refused
     if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
          if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
-             return { success: false, message: 'Blocked: Cannot access HTTP server from HTTPS site (Mixed Content).' };
+             return { success: false, message: 'BLOCKED: Browser blocked HTTP connection. Please set URL to "/" in Admin Panel.' };
          }
-         return { success: false, message: 'Connection refused. Is the server running?' };
+         return { success: false, message: 'Connection refused. Is the server running? Check VPS Firewall.' };
     }
     
     return { success: false, message: error.message || 'Network error' };

@@ -138,8 +138,8 @@ export const INITIAL_USERS: User[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
-  // FIX: Using relative path allows Vercel rewrite proxy to handle HTTP/HTTPS bridging
-  viteGasUrl: '', 
+  // FIX: Using relative path '/' allows Vercel rewrite proxy to handle HTTP/HTTPS bridging automatically
+  viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: [

@@ -11,6 +11,13 @@ app.use(cors({ origin: '*' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
+// --- LOGGING MIDDLEWARE (Agar kelihatan di terminal saat ada Request) ---
+app.use((req, res, next) => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] 📡 Incoming Request: ${req.method} ${req.url}`);
+    next();
+});
+
 // STRICT FIX: Always use 127.0.0.1 for local VPS MySQL
 const dbHost = '127.0.0.1';
 
@@ -41,10 +48,14 @@ const formatRow = (row) => {
 };
 
 // Routes
-app.get('/', (req, res) => res.send('SmartStock API Running...'));
+app.get('/', (req, res) => {
+    console.log("✅ Root endpoint hit");
+    res.send('SmartStock API Running...');
+});
 
 app.get('/api/data', async (req, res) => {
     try {
+        console.log("🔄 Fetching all data...");
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -58,6 +69,7 @@ app.get('/api/data', async (req, res) => {
             settings[row.setting_key] = val;
         });
 
+        console.log("✅ Data fetched successfully");
         res.json({
             status: 'success',
             data: { 
@@ -69,12 +81,15 @@ app.get('/api/data', async (req, res) => {
             }
         });
     } catch (error) {
+        console.error("❌ Error fetching data:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
+    console.log(`💾 Syncing data for: ${type}`);
+    
     if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing data' });
 
     const connection = await pool.getConnection();
@@ -120,9 +135,11 @@ app.post('/api/sync', async (req, res) => {
             }
         }
         await connection.commit();
+        console.log("✅ Sync successful");
         res.json({ status: 'success' });
     } catch (error) {
         await connection.rollback();
+        console.error("❌ Sync failed:", error.message);
         res.status(500).json({ status: 'error', message: error.message });
     } finally {
         connection.release();

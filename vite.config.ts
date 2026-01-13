@@ -5,7 +5,16 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true, // Listen on all network interfaces (0.0.0.0)
-    port: 5173
+    host: true, // Listen on all network interfaces
+    port: 5173,
+    // Konfigurasi Proxy untuk Local Development
+    // Ini membuat request ke '/api' di localhost diteruskan ke VPS Anda
+    proxy: {
+      '/api': {
+        target: 'http://157.245.59.65:3000', // IP VPS Anda
+        changeOrigin: true,
+        secure: false,
+      }
+    }
   }
 });
