@@ -1,0 +1,5 @@
+{
+  "name": "SmartStock Inventory",
+  "description": "A modern, AI-powered warehouse inventory management system featuring real-time stock tracking, data visualization with Recharts, and a Gemini-powered smart assistant for inventory insights and reporting.",
+  "requestFramePermissions": []
+}
