@@ -3,7 +3,9 @@ const mysql = require('mysql2/promise');
 
 async function setupDatabase() {
     console.log('🚀 Setting up Database...');
-    
+    console.log('   User:', process.env.DB_USER || 'smartstock (default)');
+    console.log('   Host:', '127.0.0.1');
+
     const config = {
         host: '127.0.0.1',
         user: process.env.DB_USER || 'smartstock',
@@ -23,7 +25,6 @@ async function setupDatabase() {
         const connection = await mysql.createConnection(config);
         
         const dbName = process.env.DB_NAME || 'smartstock_db';
-        // Use string concatenation to avoid template literal issues in shell scripts
         await connection.query('CREATE DATABASE IF NOT EXISTS ' + dbName);
         await connection.query('USE ' + dbName);
 
@@ -35,6 +36,9 @@ async function setupDatabase() {
         process.exit();
     } catch (error) {
         console.error('❌ DB Setup Error:', error.message);
+        if (error.code === 'ER_ACCESS_DENIED_ERROR') {
+            console.error('   👉 Check your DB_PASSWORD in the .env file.');
+        }
         process.exit(1);
     }
 }

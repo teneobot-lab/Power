@@ -2,12 +2,14 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, UnitDefinition, UserRole, TableColumn } from '../types';
 import { CATEGORIES } from '../constants';
 import { generateId } from '../utils/storageUtils';
-import { Search, Plus, Filter, Edit2, Trash2, AlertCircle, X, Layers, Eye, Columns } from 'lucide-react';
+import { Search, Plus, Filter, Edit2, Trash2, AlertCircle, X, Layers, Eye, Columns, Upload, Download, FileSpreadsheet } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
+import * as XLSX from 'xlsx';
 
 interface InventoryTableProps {
   items: InventoryItem[];
   onAddItem: (item: InventoryItem) => void;
+  onBatchAdd?: (items: InventoryItem[]) => void; // New prop for batch processing
   onUpdateItem: (item: InventoryItem) => void;
   onDeleteItem: (id: string) => void;
   userRole: UserRole;
@@ -16,7 +18,7 @@ interface InventoryTableProps {
 }
 
 const InventoryTable: React.FC<InventoryTableProps> = ({ 
-  items, onAddItem, onUpdateItem, onDeleteItem, userRole, columns, onToggleColumn 
+  items, onAddItem, onBatchAdd, onUpdateItem, onDeleteItem, userRole, columns, onToggleColumn 
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -28,6 +30,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   const columnMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -61,6 +64,104 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       });
   }, [items, debouncedSearchTerm, categoryFilter]);
 
+  // --- Excel Import/Export Logic ---
+
+  const handleDownloadTemplate = () => {
+    const headers = [
+      { 
+        "Name": "Example Item", 
+        "SKU": "EX-001", 
+        "Category": "General", 
+        "Quantity": 100, 
+        "Base Unit": "Pcs", 
+        "Min Level": 10, 
+        "Price": 15000, 
+        "Location": "A-01" 
+      }
+    ];
+    
+    const ws = XLSX.utils.json_to_sheet(headers);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "SmartStock_Import_Template.xlsx");
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
+      const data = XLSX.utils.sheet_to_json(ws);
+      
+      processImportedData(data);
+    };
+    reader.readAsBinaryString(file);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const processImportedData = (data: any[]) => {
+    if (!onBatchAdd) return;
+
+    const newItems: InventoryItem[] = [];
+    let skippedCount = 0;
+
+    data.forEach((row: any) => {
+       // Map Excel Columns to InventoryItem
+       // Flexible mapping: Check for both "Name" (Template) and "name" (lowercase)
+       const name = row['Name'] || row['name'];
+       const sku = row['SKU'] || row['sku'];
+       const category = row['Category'] || row['category'] || 'Uncategorized';
+       const qty = Number(row['Quantity'] || row['quantity'] || 0);
+       const baseUnit = row['Base Unit'] || row['baseUnit'] || 'Pcs';
+       const minLevel = Number(row['Min Level'] || row['minLevel'] || 0);
+       const price = Number(row['Price'] || row['price'] || 0);
+       const location = row['Location'] || row['location'] || '';
+
+       if (!name || !sku) {
+         // Skip invalid rows
+         return;
+       }
+
+       // Check duplicate SKU in current items OR in the new batch being created
+       const existsInState = items.some(i => i.sku === sku);
+       const existsInBatch = newItems.some(i => i.sku === sku);
+
+       if (existsInState || existsInBatch) {
+         skippedCount++;
+         return;
+       }
+
+       newItems.push({
+         id: generateId(),
+         name: String(name),
+         sku: String(sku),
+         category: String(category),
+         quantity: isNaN(qty) ? 0 : qty,
+         baseUnit: String(baseUnit),
+         minLevel: isNaN(minLevel) ? 0 : minLevel,
+         unitPrice: isNaN(price) ? 0 : price,
+         location: String(location),
+         lastUpdated: new Date().toISOString(),
+         alternativeUnits: [] // Excel import simple version doesn't support nested units yet
+       });
+    });
+
+    if (newItems.length > 0) {
+       onBatchAdd(newItems);
+       alert(`Successfully imported ${newItems.length} items.${skippedCount > 0 ? ` Skipped ${skippedCount} duplicates.` : ''}`);
+    } else {
+       alert("No new items imported. Check for duplicate SKUs or empty file.");
+    }
+  };
+
+  // --- End Excel Logic ---
+
   const handleOpenModal = (item?: InventoryItem) => {
     setFormError(null);
     setNewUnitName('');
@@ -73,7 +174,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     } else {
       setEditingItem(null);
       setFormData({
-        category: CATEGORIES[0],
+        category: '', 
         quantity: 0,
         minLevel: 5,
         unitPrice: 0,
@@ -137,7 +238,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canEdit) return; // Guard against viewers submitting
+    if (!canEdit) return;
 
     setFormError(null);
 
@@ -147,7 +248,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       id: editingItem ? editingItem.id : generateId(),
       name: formData.name || '',
       sku: formData.sku || '',
-      category: formData.category || CATEGORIES[0],
+      category: formData.category || 'Uncategorized', 
       quantity: Number(formData.quantity) || 0,
       baseUnit: formData.baseUnit || 'Pcs',
       alternativeUnits: alternativeUnits,
@@ -167,7 +268,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 flex-shrink-0">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 flex-shrink-0">
         <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 w-full sm:w-auto shadow-sm">
           <Search className="w-5 h-5 text-slate-400" />
           <input 
@@ -179,7 +280,39 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
           />
         </div>
         
-        <div className="flex gap-2 w-full sm:w-auto justify-end">
+        <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-end items-center">
+          
+          {/* Excel Actions */}
+          {canEdit && (
+            <div className="flex gap-2 mr-2">
+                <button 
+                  onClick={handleDownloadTemplate}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                  title="Download Excel Template"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Template
+                </button>
+                <div className="relative">
+                   <input 
+                      type="file" 
+                      accept=".xlsx, .xls"
+                      ref={fileInputRef}
+                      className="hidden"
+                      onChange={handleFileUpload}
+                   />
+                   <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+                      title="Import from Excel"
+                   >
+                     <FileSpreadsheet className="w-3.5 h-3.5" />
+                     Import Excel
+                   </button>
+                </div>
+            </div>
+          )}
+
           {/* Column Toggle */}
           <div className="relative" ref={columnMenuRef}>
              <button
@@ -394,13 +527,18 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                     </div>
                     <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-                    <select 
+                    <input 
+                        type="text"
+                        required
+                        list="category-suggestions"
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                        value={formData.category}
+                        value={formData.category || ''}
                         onChange={e => setFormData({...formData, category: e.target.value})}
-                    >
-                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
+                        placeholder="Type or select..."
+                    />
+                    <datalist id="category-suggestions">
+                        {CATEGORIES.map(c => <option key={c} value={c} />)}
+                    </datalist>
                     </div>
                     
                     {/* Advanced Unit Config Section */}

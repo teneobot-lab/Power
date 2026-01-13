@@ -287,6 +287,12 @@ const App: React.FC = () => {
     showToast(`${item.name} added to inventory`, 'success');
   };
 
+  // NEW: Batch Add Handler for Excel Import
+  const batchAddItems = (newItems: InventoryItem[]) => {
+    setItems(prev => [...prev, ...newItems]);
+    showToast(`${newItems.length} items imported successfully!`, 'success');
+  };
+
   const updateItem = (updatedItem: InventoryItem) => {
     setItems(prev => prev.map(item => item.id === updatedItem.id ? updatedItem : item));
     showToast(`${updatedItem.name} updated`, 'success');
@@ -648,7 +654,8 @@ const App: React.FC = () => {
                 {currentView === AppView.INVENTORY && (
                     <InventoryTable 
                     items={items} 
-                    onAddItem={addItem} 
+                    onAddItem={addItem}
+                    onBatchAdd={batchAddItems} 
                     onUpdateItem={updateItem} 
                     onDeleteItem={deleteItem}
                     userRole={currentUser.role}
