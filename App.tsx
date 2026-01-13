@@ -54,6 +54,25 @@ const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
+  // --- Helper: Apply Cloud Data to State ---
+  const applyCloudData = useCallback((cloudData: any, sourceUrl: string) => {
+      setItems(cloudData.inventory || []);
+      setTransactions(cloudData.transactions || []);
+      setSuppliers(cloudData.suppliers || []);
+      setUsers(cloudData.users || []);
+      
+      // Merge settings but keep the working URL
+      setSettings(prev => ({
+          ...prev,
+          ...cloudData.settings,
+          viteGasUrl: sourceUrl, 
+          mediaItems: (cloudData.settings as any)?.mediaItems || prev.mediaItems
+      }));
+
+      setIsCloudConnected(true);
+      setLastSyncError(null);
+  }, []);
+
   // --- Initial Load ---
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -61,51 +80,50 @@ const App: React.FC = () => {
       // 1. Load Local First (Fast)
       let localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
       
-      // AUTO-FIX (Less aggressive): Only suggest VPS if URL is missing
-      if (!localSettings.viteGasUrl) {
-          console.log("Using Default VPS URL");
-          localSettings.viteGasUrl = 'http://157.245.59.65:3000';
-          saveToStorage('smartstock_settings', localSettings);
-      }
-
-      setSettings(localSettings);
+      // Load other local data
       setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
       setTransactions(loadFromStorage('smartstock_transactions', []));
       setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
       setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
       setTablePrefs(loadFromStorage('smartstock_table_prefs', DEFAULT_TABLE_PREFS));
+      
+      setSettings(localSettings);
 
-      // 2. If API URL exists, Try Cloud Sync
+      // 2. Try Connecting to Backend
       if (localSettings.viteGasUrl) {
          showToast(`Connecting to ${localSettings.viteGasUrl}...`, "info");
          try {
             const cloudData = await fetchBackendData(localSettings.viteGasUrl);
-            
             if (cloudData) {
-                setIsCloudConnected(true);
-                setItems(cloudData.inventory || []);
-                setTransactions(cloudData.transactions || []);
-                setSuppliers(cloudData.suppliers || []);
-                setUsers(cloudData.users || []);
-                
-                // Merge settings
-                setSettings(prev => ({
-                    ...prev,
-                    ...cloudData.settings,
-                    viteGasUrl: localSettings.viteGasUrl, 
-                    mediaItems: (cloudData.settings as any)?.mediaItems || prev.mediaItems
-                }));
-
+                applyCloudData(cloudData, localSettings.viteGasUrl);
                 showToast("Data synced with VPS!", "success");
-                setLastSyncError(null);
             } else {
-                throw new Error("Empty response from server");
+                throw new Error("Empty response");
             }
          } catch(e: any) {
+            console.warn("Primary connection failed:", e.message);
+            
+            // AUTO-HEALING: If direct IP failed, try Proxy ('/')
+            if (localSettings.viteGasUrl !== '/') {
+                showToast("Direct connection failed. Retrying via Proxy...", "warning");
+                try {
+                    const proxyData = await fetchBackendData('/');
+                    if (proxyData) {
+                        console.log("✅ Proxy fallback successful!");
+                        applyCloudData(proxyData, '/');
+                        saveToStorage('smartstock_settings', { ...localSettings, viteGasUrl: '/' }); // Persist fix
+                        showToast("Connected via Proxy (Auto-Fixed)", "success");
+                        return; // Exit success
+                    }
+                } catch (proxyErr) {
+                    console.error("Proxy fallback also failed:", proxyErr);
+                }
+            }
+
+            // If all failed
             setIsCloudConnected(false);
-            const msg = e.message || "Connection failed";
-            setLastSyncError(msg);
-            showToast(`Sync Failed: ${msg}`, "error");
+            setLastSyncError(e.message || "Connection failed");
+            showToast(`Offline Mode: ${e.message}`, "error");
          }
       }
     } catch (error) {
@@ -114,7 +132,7 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, applyCloudData]);
 
   useEffect(() => {
     loadData();
@@ -134,18 +152,22 @@ const App: React.FC = () => {
 
   // Helper for Cloud Sync
   const syncToCloud = async (type: string, data: any) => {
+    // Only sync if we have a URL and we are successfully connected
+    // This prevents flooding the logs with errors if the server is unreachable
     if (settings.viteGasUrl && isMounted.current) {
+        if (!isCloudConnected) return; // Don't try syncing if we know we are offline
+
         setIsSaving(true);
         const result = await syncBackendData(settings.viteGasUrl, type as any, data);
         setIsSaving(false);
         
         if (!result.success) {
+            // If it was connected but now failed, mark as disconnected
             setIsCloudConnected(false);
             const msg = result.message || "Unknown error";
             setLastSyncError(msg);
-            console.error(`Sync ${type} failed:`, msg);
+            showToast(`Sync Error: ${msg}`, 'error');
         } else {
-            setIsCloudConnected(true);
             setLastSyncError(null);
         }
     }

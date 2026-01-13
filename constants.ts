@@ -138,8 +138,9 @@ export const INITIAL_USERS: User[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
-  // FIX: Direct IP Connection to VPS to solve "Offline" issues on local dev
-  viteGasUrl: 'http://157.245.59.65:3000', 
+  // FIX: Use relative path '/' to trigger Proxy in vite.config.ts or vercel.json
+  // This avoids Mixed Content errors (HTTPS -> HTTP) and Firewall blocking
+  viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: [
