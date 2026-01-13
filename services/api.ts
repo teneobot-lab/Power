@@ -17,8 +17,6 @@ interface FullState {
 
 export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
   try {
-    // Determine endpoint based on whether it's GAS or Node VPS
-    // GAS usually ends in /exec, Node usually defines /api/data
     const isGas = baseUrl.includes('script.google.com');
     const url = isGas ? baseUrl : `${baseUrl.replace(/\/$/, '')}/api/data`;
 
@@ -51,7 +49,7 @@ export const syncBackendData = async (
   baseUrl: string, 
   type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings', 
   data: any
-): Promise<boolean> => {
+): Promise<{ success: boolean; message?: string }> => {
   try {
     const isGas = baseUrl.includes('script.google.com');
     // GAS uses single endpoint, Node uses /api/sync
@@ -63,21 +61,32 @@ export const syncBackendData = async (
       method: 'POST',
       body: payload,
       headers: {
-        // GAS sometimes prefers text/plain to avoid preflight CORS, 
-        // but Node/Express needs application/json to parse body correctly.
         'Content-Type': isGas ? 'text/plain' : 'application/json' 
       }
     });
 
     if (!response.ok) {
-        console.error(`HTTP error! status: ${response.status}`);
-        return false;
+        const errorText = await response.text().catch(() => response.statusText);
+        console.error(`Sync HTTP Error: ${response.status}`, errorText);
+        return { success: false, message: `Server error: ${response.status}` };
     }
 
     const json = await response.json();
-    return json.status === 'success';
-  } catch (error) {
+    return { 
+        success: json.status === 'success', 
+        message: json.message || 'Unknown server response'
+    };
+  } catch (error: any) {
     console.error(`Error syncing ${type}:`, error);
-    return false;
+    
+    // Friendly error message for Mixed Content
+    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+         if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
+             return { success: false, message: 'Blocked: Cannot access HTTP server from HTTPS site (Mixed Content).' };
+         }
+         return { success: false, message: 'Connection refused. Is the server running?' };
+    }
+    
+    return { success: false, message: error.message || 'Network error' };
   }
 };

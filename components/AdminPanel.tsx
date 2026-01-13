@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Key, Link, Check, MonitorPlay, Youtube, Video, ExternalLink, ArrowLeft, Play, ListVideo, Search } from 'lucide-react';
+import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Key, Link, Check, MonitorPlay, Youtube, Video, ExternalLink, ArrowLeft, Play, ListVideo, Search, AlertTriangle } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -269,14 +269,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                       <input
                         type="url"
                         className="w-full pl-10 pr-3 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        placeholder="https://script.google.com/..."
+                        placeholder="http://IP_ADDRESS:3000"
                         value={tempSettings.viteGasUrl}
                         onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})}
                       />
                     </div>
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Endpoint for backend synchronization (Google Apps Script or similar).
+                      Endpoint for backend synchronization (Node.js VPS or Google Apps Script).
                     </p>
+                    
+                    {/* Mixed Content Warning */}
+                    {window.location.protocol === 'https:' && tempSettings.viteGasUrl.startsWith('http:') && (
+                        <div className="mt-2 flex items-start gap-2 bg-amber-50 text-amber-800 p-2 rounded text-xs">
+                            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <p>
+                                <strong>Warning:</strong> You are on HTTPS (Vercel) but trying to connect to HTTP. 
+                                Browsers will block this connection (Mixed Content). You must either use HTTPS for your backend or test on localhost.
+                            </p>
+                        </div>
+                    )}
                   </div>
 
                   <div className="pt-4 border-t border-slate-100 flex items-center gap-4">

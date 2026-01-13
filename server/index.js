@@ -8,7 +8,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+// Enable CORS for ALL origins to fix "Network Error" on Vercel/Localhost mismatch
+app.use(cors({
+    origin: '*', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Logging Middleware (Cek terminal Anda untuk melihat request masuk)
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 // Increase limit significantly for Base64 image sync
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
@@ -158,6 +170,7 @@ app.post('/api/sync', async (req, res) => {
         }
 
         await connection.commit();
+        console.log(`Synced ${type}: ${Array.isArray(data) ? data.length : 1} records.`);
         res.json({ status: 'success', message: `Synced ${type} successfully.` });
 
     } catch (error) {

@@ -34,6 +34,7 @@ const App: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false); 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCloudConnected, setIsCloudConnected] = useState(false); // Cloud status
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
 
   // --- Debounced States for Persistence ---
   const debouncedItems = useDebounce(items, 1500); // Slightly longer delay for network
@@ -88,6 +89,7 @@ const App: React.FC = () => {
             }));
 
             showToast("Data synced with cloud!", "success");
+            setLastSyncError(null);
          } else {
             setIsCloudConnected(false);
             showToast("Cloud sync failed. Using local data.", "warning");
@@ -121,10 +123,18 @@ const App: React.FC = () => {
   const syncToCloud = async (type: string, data: any) => {
     if (settings.viteGasUrl && isMounted.current) {
         setIsSaving(true);
-        const success = await syncBackendData(settings.viteGasUrl, type as any, data);
+        const result = await syncBackendData(settings.viteGasUrl, type as any, data);
         setIsSaving(false);
-        if (!success) setIsCloudConnected(false);
-        else setIsCloudConnected(true);
+        
+        if (!result.success) {
+            setIsCloudConnected(false);
+            const msg = result.message || "Unknown error";
+            setLastSyncError(msg);
+            console.error(`Sync ${type} failed:`, msg);
+        } else {
+            setIsCloudConnected(true);
+            setLastSyncError(null);
+        }
     }
   };
 
@@ -502,7 +512,10 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
                 {/* Cloud Status Indicator */}
                 {settings.viteGasUrl && (
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                    <div 
+                        title={lastSyncError || "Synced successfully"}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border cursor-help ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}
+                    >
                         {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
                         {isCloudConnected ? 'Cloud Active' : 'Offline'}
                     </div>
@@ -534,10 +547,18 @@ const App: React.FC = () => {
             </div>
         </header>
 
-        {/* Notifications Banner - Part of the scrollable area or fixed? Better fixed under header */}
+        {/* Notifications Banner */}
         {notifications.length > 0 && (
             <div className="mx-4 md:mx-8 mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
                 <span className="font-bold">Alert:</span> {notifications[0]}
+            </div>
+        )}
+        
+        {/* Sync Error Banner */}
+        {lastSyncError && (
+             <div className="mx-4 md:mx-8 mb-4 bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
+                <CloudOff className="w-4 h-4 flex-shrink-0" />
+                <span className="font-bold">Sync Error:</span> {lastSyncError}
             </div>
         )}
 
