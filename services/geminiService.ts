@@ -1,6 +1,12 @@
 import { GoogleGenAI } from "@google/genai";
 import { InventoryItem } from "../types";
 
+declare var process: {
+  env: {
+    API_KEY?: string;
+  }
+};
+
 // Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
   return JSON.stringify(items.map(item => ({
@@ -17,13 +23,10 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
 
 // Helper to get AI Client safely
 const getClient = (apiKey?: string) => {
-  // Prioritize the key passed from App Settings (Admin Panel)
-  let finalKey = apiKey;
-
-  // Fallback to Vite Environment Variable if available
-  if (!finalKey) {
-    finalKey = import.meta.env.VITE_GEMINI_API_KEY;
-  }
+  // Prioritize the API key from the environment variable as per strict guidelines.
+  // We assume process.env.API_KEY is available and configured.
+  // We also check the passed apiKey for backward compatibility with the existing app's settings UI.
+  const finalKey = process.env.API_KEY || apiKey;
 
   if (!finalKey) return null;
   return new GoogleGenAI({ apiKey: finalKey });
@@ -34,7 +37,7 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
     const ai = getClient(apiKey);
     
     if (!ai) {
-      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key, or configure VITE_GEMINI_API_KEY in Vercel.";
+      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
     }
     
     const inventoryData = formatInventoryContext(items);
