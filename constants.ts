@@ -138,8 +138,8 @@ export const INITIAL_USERS: User[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
-  // FIX: Using relative path '/' allows Vercel rewrite proxy to handle HTTP/HTTPS bridging automatically
-  viteGasUrl: '/', 
+  // FIX: Direct IP Connection to VPS to solve "Offline" issues on local dev
+  viteGasUrl: 'http://157.245.59.65:3000', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: [

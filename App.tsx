@@ -12,7 +12,7 @@ import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Boxes, Bell, ArrowRightLeft, History, Users, Settings as SettingsIcon, RefreshCw, Save as SaveIcon, ChevronDown, User as UserIcon, Menu, X, Cloud, CloudOff } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Boxes, Bell, ArrowRightLeft, History, Users, Settings as SettingsIcon, RefreshCw, Save as SaveIcon, ChevronDown, User as UserIcon, Menu, X, Cloud, CloudOff, PlugZap } from 'lucide-react';
 
 const App: React.FC = () => {
   // --- Global State ---
@@ -59,7 +59,15 @@ const App: React.FC = () => {
     setIsLoading(true);
     try {
       // 1. Load Local First (Fast)
-      const localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
+      let localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
+      
+      // AUTO-FIX: Force update if URL is outdated/localhost but we need VPS
+      if (!localSettings.viteGasUrl || localSettings.viteGasUrl === '/' || localSettings.viteGasUrl.includes('localhost')) {
+          console.log("🔄 Auto-correcting backend URL to VPS...");
+          localSettings.viteGasUrl = 'http://157.245.59.65:3000';
+          saveToStorage('smartstock_settings', localSettings);
+      }
+
       setSettings(localSettings);
       setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
       setTransactions(loadFromStorage('smartstock_transactions', []));
@@ -69,7 +77,7 @@ const App: React.FC = () => {
 
       // 2. If API URL exists, Try Cloud Sync
       if (localSettings.viteGasUrl) {
-         showToast("Connecting to cloud database...", "info");
+         showToast(`Connecting to ${localSettings.viteGasUrl}...`, "info");
          const cloudData = await fetchBackendData(localSettings.viteGasUrl);
          
          if (cloudData) {
@@ -88,10 +96,11 @@ const App: React.FC = () => {
                 mediaItems: (cloudData.settings as any)?.mediaItems || prev.mediaItems
             }));
 
-            showToast("Data synced with cloud!", "success");
+            showToast("Data synced with VPS!", "success");
             setLastSyncError(null);
          } else {
             setIsCloudConnected(false);
+            setLastSyncError("Connection refused. Check VPS Firewall or URL.");
             showToast("Cloud sync failed. Using local data.", "warning");
          }
       }
@@ -197,6 +206,14 @@ const App: React.FC = () => {
     if(window.confirm("Reload data from cloud? Unsaved changes in forms might be lost.")) {
       loadData();
     }
+  };
+
+  // --- Force Connect Handler ---
+  const handleForceConnect = () => {
+      const vpsUrl = 'http://157.245.59.65:3000';
+      setSettings(prev => ({ ...prev, viteGasUrl: vpsUrl }));
+      saveToStorage('smartstock_settings', { ...settings, viteGasUrl: vpsUrl });
+      window.location.reload(); // Hard reload to force fetch
   };
 
   // --- Role Switcher ---
@@ -519,6 +536,17 @@ const App: React.FC = () => {
                         {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
                         {isCloudConnected ? 'Cloud Active' : 'Offline'}
                     </div>
+                )}
+                
+                {/* Auto Fix Button if Offline */}
+                {!isCloudConnected && (
+                    <button 
+                        onClick={handleForceConnect}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs font-medium hover:bg-blue-700 shadow-sm"
+                    >
+                        <PlugZap className="w-3 h-3" />
+                        Force Connect VPS
+                    </button>
                 )}
 
                 {isSaving && (
