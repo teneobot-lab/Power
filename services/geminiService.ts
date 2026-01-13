@@ -1,30 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { InventoryItem, AppSettings } from "../types";
-
-// Function to retrieve the API key dynamically
-const getApiKey = (): string => {
-  // Try to get from Admin Settings in localStorage first
-  try {
-    const settingsStr = localStorage.getItem('smartstock_settings');
-    if (settingsStr) {
-      const settings: AppSettings = JSON.parse(settingsStr);
-      if (settings.geminiApiKey && settings.geminiApiKey.trim() !== '') {
-        return settings.geminiApiKey;
-      }
-    }
-  } catch (e) {
-    console.error("Error reading settings", e);
-  }
-
-  // Fallback to environment variable
-  return process.env.API_KEY || '';
-};
-
-// Helper to get initialized AI instance
-const getAIClient = () => {
-  const apiKey = getApiKey();
-  return new GoogleGenAI({ apiKey });
-};
+import { InventoryItem } from "../types";
 
 // Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
@@ -41,11 +16,12 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
 };
 
 export const getInventoryInsights = async (items: InventoryItem[]): Promise<string> => {
-  const apiKey = getApiKey();
-  if (!apiKey) return "API Key is missing. Please configure it in the Admin Panel or .env file.";
+  // Guidelines: API key must be obtained exclusively from process.env.API_KEY.
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) return "API Key is missing in environment variables.";
 
   try {
-    const ai = getAIClient();
+    const ai = new GoogleGenAI({ apiKey });
     const inventoryData = formatInventoryContext(items);
     
     const response = await ai.models.generateContent({
@@ -66,7 +42,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Please check your API Key in Admin Panel.";
+    return "Failed to generate insights. Please check your API Key configuration.";
   }
 };
 
@@ -75,11 +51,11 @@ export const chatWithInventoryBot = async (
   items: InventoryItem[], 
   history: {role: string, parts: {text: string}[]}[] = []
 ): Promise<string> => {
-  const apiKey = getApiKey();
-  if (!apiKey) return "API Key is missing. Please configure it in the Admin Panel.";
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) return "API Key is missing in environment variables.";
 
   try {
-    const ai = getAIClient();
+    const ai = new GoogleGenAI({ apiKey });
     const inventoryData = formatInventoryContext(items);
     
     const chat = ai.chats.create({
@@ -109,6 +85,6 @@ export const chatWithInventoryBot = async (
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting to the brain right now. Please check your API Key in Admin Panel.";
+    return "Sorry, I'm having trouble connecting to the brain right now. Please check your API Key.";
   }
 };
