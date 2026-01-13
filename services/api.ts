@@ -34,6 +34,11 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
       }
     });
     
+    if (response.status === 404) {
+         console.error(`❌ 404 Not Found at: ${url}`);
+         throw new Error(`Server endpoint not found (404). Please check if backend server is running and routes are defined.`);
+    }
+
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -74,6 +79,10 @@ export const syncBackendData = async (
         'Content-Type': isGas ? 'text/plain' : 'application/json' 
       }
     });
+
+    if (response.status === 404) {
+        return { success: false, message: 'Server endpoint (sync) not found (404).' };
+    }
 
     if (!response.ok) {
         const errorText = await response.text().catch(() => response.statusText);

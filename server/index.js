@@ -11,7 +11,7 @@ app.use(cors({ origin: '*' }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 
-// --- LOGGING MIDDLEWARE (Agar kelihatan di terminal saat ada Request) ---
+// --- LOGGING MIDDLEWARE ---
 app.use((req, res, next) => {
     const timestamp = new Date().toLocaleTimeString();
     console.log(`[${timestamp}] 📡 Incoming Request: ${req.method} ${req.url}`);
@@ -47,15 +47,20 @@ const formatRow = (row) => {
     return newRow;
 };
 
-// Routes
+// --- ROUTES ---
+
+// Health Check
 app.get('/', (req, res) => {
-    console.log("✅ Root endpoint hit");
-    res.send('SmartStock API Running...');
+    res.status(200).send('SmartStock API Running. Endpoints: /api/data, /api/sync');
 });
 
+// Main Data Fetch
 app.get('/api/data', async (req, res) => {
     try {
         console.log("🔄 Fetching all data...");
+        // Test connection first
+        await pool.query('SELECT 1');
+        
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -86,6 +91,7 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
+// Data Sync
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
     console.log(`💾 Syncing data for: ${type}`);
@@ -107,9 +113,8 @@ app.post('/api/sync', async (req, res) => {
                 await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
              }
         } else {
-            // Validasi tabel untuk keamanan dasar
             const allowedTables = ['inventory', 'transactions', 'suppliers', 'users'];
-            if (!allowedTables.includes(type)) throw new Error("Invalid table");
+            if (!allowedTables.includes(type)) throw new Error("Invalid table: " + type);
 
             await connection.query(`DELETE FROM ${type}`);
             if (data.length > 0) {
@@ -144,6 +149,12 @@ app.post('/api/sync', async (req, res) => {
     } finally {
         connection.release();
     }
+});
+
+// 404 Handler - MUST BE LAST
+app.use((req, res) => {
+    console.warn(`⚠️ 404 Route Not Found: ${req.method} ${req.url}`);
+    res.status(404).json({ status: 'error', message: `Route not found: ${req.url}` });
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

@@ -14,6 +14,8 @@ export default defineConfig({
         target: 'http://157.245.59.65:3000', // IP VPS Anda
         changeOrigin: true,
         secure: false,
+        // Optional: Ensure path isn't modified unexpectedly
+        rewrite: (path) => path 
       }
     }
   }
