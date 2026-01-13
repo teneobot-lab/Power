@@ -599,7 +599,12 @@ const App: React.FC = () => {
                 />
             )}
             
-            {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
+            {currentView === AppView.AI_ASSISTANT && (
+                <AIAssistant 
+                    items={items} 
+                    apiKey={settings.geminiApiKey} 
+                />
+            )}
             </div>
         </div>
       </div>

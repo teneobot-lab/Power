@@ -15,13 +15,15 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
   })));
 };
 
-export const getInventoryInsights = async (items: InventoryItem[]): Promise<string> => {
-  // Guidelines: API key must be obtained exclusively from process.env.API_KEY.
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) return "API Key is missing in environment variables.";
+// Helper to get AI Client
+const getClient = () => {
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+};
 
+export const getInventoryInsights = async (items: InventoryItem[], _apiKey?: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getClient();
+    
     const inventoryData = formatInventoryContext(items);
     
     const response = await ai.models.generateContent({
@@ -49,13 +51,12 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
 export const chatWithInventoryBot = async (
   query: string, 
   items: InventoryItem[], 
+  _apiKey?: string,
   history: {role: string, parts: {text: string}[]}[] = []
 ): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) return "API Key is missing in environment variables.";
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getClient();
+
     const inventoryData = formatInventoryContext(items);
     
     const chat = ai.chats.create({

@@ -1,14 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { InventoryItem, ChatMessage } from '../types';
 import { chatWithInventoryBot, getInventoryInsights } from '../services/geminiService';
-import { Send, Bot, User, Sparkles, Loader2, BarChart2 } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Loader2, BarChart2, AlertCircle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface AIAssistantProps {
   items: InventoryItem[];
+  apiKey?: string;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -43,7 +44,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     setInputValue('');
     setIsLoading(true);
 
-    const responseText = await chatWithInventoryBot(inputValue, items);
+    const responseText = await chatWithInventoryBot(inputValue, items, apiKey);
 
     const modelMsg: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -68,7 +69,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     }]);
     
     setIsLoading(true);
-    const report = await getInventoryInsights(items);
+    const report = await getInventoryInsights(items, apiKey);
     
     setMessages(prev => [...prev, {
       id: (Date.now() + 1).toString(),
@@ -94,13 +95,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
         </div>
         <button 
           onClick={handleGenerateReport}
-          disabled={isLoading}
-          className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-all shadow-sm"
+          disabled={isLoading || !apiKey}
+          className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-all shadow-sm disabled:opacity-50"
         >
           <BarChart2 className="w-3.5 h-3.5" />
           Generate Insight Report
         </button>
       </div>
+      
+      {!apiKey && (
+         <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 text-xs text-amber-800 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            <span>API Key not configured. Please set "Gemini API Key" in Admin Panel -> System Settings.</span>
+         </div>
+      )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
@@ -154,13 +162,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Ask about inventory, write an email, or general questions..."
+            placeholder={apiKey ? "Ask about inventory, write an email, or general questions..." : "Configure API Key first..."}
             className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none text-sm transition-all"
-            disabled={isLoading}
+            disabled={isLoading || !apiKey}
           />
           <button 
             type="submit" 
-            disabled={!inputValue.trim() || isLoading}
+            disabled={!inputValue.trim() || isLoading || !apiKey}
             className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             <Send className="w-4 h-4" />
