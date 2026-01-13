@@ -138,7 +138,8 @@ export const INITIAL_USERS: User[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
-  viteGasUrl: '',
+  // FIX: Pre-fill with your VPS IP so you don't have to type it.
+  viteGasUrl: 'http://157.245.59.65:3000',
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: [
