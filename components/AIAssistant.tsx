@@ -106,7 +106,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
       {!apiKey && (
          <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 text-xs text-amber-800 flex items-center gap-2 flex-shrink-0">
             <AlertCircle className="w-4 h-4" />
-            <span>API Key not configured. Please set "Gemini API Key" in Admin Panel -> System Settings.</span>
+            <span>API Key not configured. Please set "Gemini API Key" in Admin Panel &rarr; System Settings.</span>
          </div>
       )}
 
