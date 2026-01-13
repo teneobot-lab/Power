@@ -18,12 +18,11 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
 // Helper to get AI Client safely
 const getClient = (apiKey?: string) => {
   // Prioritize the key passed from App Settings (Admin Panel)
-  // We use a safe check for process.env to avoid "ReferenceError" in some browser environments
   let finalKey = apiKey;
 
-  // Fallback to process.env if available (for development/deployment later)
-  if (!finalKey && typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-    finalKey = process.env.API_KEY;
+  // Fallback to Vite Environment Variable if available
+  if (!finalKey) {
+    finalKey = import.meta.env.VITE_GEMINI_API_KEY;
   }
 
   if (!finalKey) return null;
@@ -35,7 +34,7 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
     const ai = getClient(apiKey);
     
     if (!ai) {
-      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
+      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key, or configure VITE_GEMINI_API_KEY in Vercel.";
     }
     
     const inventoryData = formatInventoryContext(items);
