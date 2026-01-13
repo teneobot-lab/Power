@@ -160,11 +160,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row gap-6">
+    <div className="space-y-6 animate-fade-in flex flex-col h-full overflow-hidden">
+      <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
         
         {/* Sidebar / Tabs */}
-        <div className="w-full md:w-64 flex flex-col gap-2">
+        <div className="w-full md:w-64 flex flex-col gap-2 flex-shrink-0">
           <button
             onClick={() => setActiveTab('settings')}
             className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}
@@ -189,7 +189,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
 
         {/* Content Area */}
-        <div className="flex-1">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
           
           {activeTab === 'settings' && (
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
@@ -297,8 +297,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           )}
 
           {activeTab === 'users' && (
-            <div className="space-y-4">
-               <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+            <div className="space-y-4 h-full flex flex-col">
+               <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex-shrink-0">
                   <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                     <Shield className="w-5 h-5 text-slate-500" />
                     System Users
@@ -312,59 +312,61 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   </button>
                </div>
 
-               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                 <table className="w-full text-left border-collapse">
-                   <thead>
-                     <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase">
-                       <th className="px-6 py-4">User</th>
-                       <th className="px-6 py-4">Role</th>
-                       <th className="px-6 py-4">Status</th>
-                       <th className="px-6 py-4 text-right">Actions</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-200 text-sm">
-                     {users.map(user => (
-                       <tr key={user.id} className="hover:bg-slate-50">
-                         <td className="px-6 py-4">
-                           <div className="flex items-center gap-3">
-                             <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
-                               {user.name.charAt(0)}
-                             </div>
-                             <div>
-                               <div className="font-medium text-slate-900">{user.name}</div>
-                               <div className="text-xs text-slate-500">{user.email}</div>
-                             </div>
-                           </div>
-                         </td>
-                         <td className="px-6 py-4">
-                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium uppercase ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-800'}`}>
-                             {user.role}
-                           </span>
-                         </td>
-                         <td className="px-6 py-4">
-                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
-                             {user.status}
-                           </span>
-                         </td>
-                         <td className="px-6 py-4">
-                           <div className="flex justify-end gap-2">
-                             <button onClick={() => openUserModal(user)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">
-                               <Edit2 className="w-4 h-4" />
-                             </button>
-                             <button 
-                               onClick={() => {
-                                 if(window.confirm('Delete user?')) onDeleteUser(user.id);
-                               }} 
-                               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
-                             >
-                               <Trash2 className="w-4 h-4" />
-                             </button>
-                           </div>
-                         </td>
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+                 <div className="overflow-auto flex-1 custom-scrollbar">
+                   <table className="w-full text-left border-collapse min-w-[600px]">
+                     <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                       <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase">
+                         <th className="px-6 py-4 bg-slate-50">User</th>
+                         <th className="px-6 py-4 bg-slate-50">Role</th>
+                         <th className="px-6 py-4 bg-slate-50">Status</th>
+                         <th className="px-6 py-4 text-right bg-slate-50">Actions</th>
                        </tr>
-                     ))}
-                   </tbody>
-                 </table>
+                     </thead>
+                     <tbody className="divide-y divide-slate-200 text-sm">
+                       {users.map(user => (
+                         <tr key={user.id} className="hover:bg-slate-50">
+                           <td className="px-6 py-4">
+                             <div className="flex items-center gap-3">
+                               <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-bold">
+                                 {user.name.charAt(0)}
+                               </div>
+                               <div>
+                                 <div className="font-medium text-slate-900">{user.name}</div>
+                                 <div className="text-xs text-slate-500">{user.email}</div>
+                               </div>
+                             </div>
+                           </td>
+                           <td className="px-6 py-4">
+                             <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium uppercase ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-800'}`}>
+                               {user.role}
+                             </span>
+                           </td>
+                           <td className="px-6 py-4">
+                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>
+                               {user.status}
+                             </span>
+                           </td>
+                           <td className="px-6 py-4">
+                             <div className="flex justify-end gap-2">
+                               <button onClick={() => openUserModal(user)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">
+                                 <Edit2 className="w-4 h-4" />
+                               </button>
+                               <button 
+                                 onClick={() => {
+                                   if(window.confirm('Delete user?')) onDeleteUser(user.id);
+                                 }} 
+                                 className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                               >
+                                 <Trash2 className="w-4 h-4" />
+                               </button>
+                             </div>
+                           </td>
+                         </tr>
+                       ))}
+                     </tbody>
+                   </table>
+                 </div>
                </div>
             </div>
           )}

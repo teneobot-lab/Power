@@ -108,6 +108,11 @@ export interface Transaction {
   items: TransactionItemDetail[];
   notes?: string;
   timestamp: string;
+  // New Inbound Fields
+  supplierName?: string; // Changed from supplierId to supplierName for text input
+  poNumber?: string; // Purchase Order
+  riNumber?: string; // Receiving Inspection / Receipt Number
+  photos?: string[]; // Array of Base64 strings
 }
 
 // Toast Types

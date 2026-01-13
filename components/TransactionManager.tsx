@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole } from '../types';
-import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert } from 'lucide-react';
+import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier } from '../types';
+import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, Upload, Image as ImageIcon, Truck } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
 interface TransactionManagerProps {
@@ -9,9 +9,12 @@ interface TransactionManagerProps {
   onProcessTransaction: (transaction: Transaction) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
   userRole: UserRole;
+  suppliers?: Supplier[];
 }
 
-const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, transactions, onProcessTransaction, onUpdateTransaction, userRole }) => {
+const TransactionManager: React.FC<TransactionManagerProps> = ({ 
+  inventory, transactions, onProcessTransaction, onUpdateTransaction, userRole, suppliers = [] 
+}) => {
   const canEdit = userRole === 'admin' || userRole === 'staff';
   
   // Force history tab if viewer, otherwise default to new
@@ -28,6 +31,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
   const [type, setType] = useState<TransactionType>('IN');
   const [notes, setNotes] = useState('');
   const [cartItems, setCartItems] = useState<TransactionItemDetail[]>([]);
+  
+  // New Inbound Fields State
+  const [supplierName, setSupplierName] = useState('');
+  const [poNumber, setPoNumber] = useState('');
+  const [riNumber, setRiNumber] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
 
   // --- Item Selection State (Shared logic reused in both New & Edit) ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,6 +57,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
   const [editType, setEditType] = useState<TransactionType>('IN');
   const [editNotes, setEditNotes] = useState('');
   const [editCartItems, setEditCartItems] = useState<TransactionItemDetail[]>([]);
+  
+  // Edit Inbound Fields
+  const [editSupplierName, setEditSupplierName] = useState('');
+  const [editPoNumber, setEditPoNumber] = useState('');
+  const [editRiNumber, setEditRiNumber] = useState('');
+  const [editPhotos, setEditPhotos] = useState<string[]>([]);
 
   // Refs for click outside
   const searchRef = useRef<HTMLDivElement>(null);
@@ -181,6 +196,39 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
     }
   };
 
+  // --- Photo Upload Logic ---
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      const newBase64s: string[] = [];
+
+      for (const file of files) {
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+          reader.onload = (readerEvent) => {
+             resolve(readerEvent.target?.result as string);
+          };
+        });
+        reader.readAsDataURL(file);
+        newBase64s.push(await base64Promise);
+      }
+      
+      if (target === 'new') {
+        setPhotos(prev => [...prev, ...newBase64s]);
+      } else {
+        setEditPhotos(prev => [...prev, ...newBase64s]);
+      }
+    }
+  };
+
+  const removePhoto = (index: number, target: 'new' | 'edit') => {
+     if (target === 'new') {
+        setPhotos(prev => prev.filter((_, i) => i !== index));
+     } else {
+        setEditPhotos(prev => prev.filter((_, i) => i !== index));
+     }
+  };
+
   const handleSubmitTransaction = () => {
     if (cartItems.length === 0) return;
 
@@ -190,14 +238,27 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
       type,
       items: cartItems,
       notes,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      // Add optional inbound fields only if type is IN (or if provided)
+      ...(type === 'IN' ? {
+        supplierName: supplierName || undefined,
+        poNumber: poNumber || undefined,
+        riNumber: riNumber || undefined,
+        photos: photos.length > 0 ? photos : undefined
+      } : {})
     };
 
     onProcessTransaction(transaction);
+    
+    // Reset form
     setCartItems([]);
     setNotes('');
     setSelectedItem(null);
     setSearchQuery('');
+    setSupplierName('');
+    setPoNumber('');
+    setRiNumber('');
+    setPhotos([]);
   };
 
   // --- Edit Handlers ---
@@ -206,7 +267,14 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
     setEditDate(tx.date);
     setEditType(tx.type);
     setEditNotes(tx.notes || '');
-    setEditCartItems([...tx.items]); 
+    setEditCartItems([...tx.items]);
+    
+    // Populate Inbound fields
+    setEditSupplierName(tx.supplierName || '');
+    setEditPoNumber(tx.poNumber || '');
+    setEditRiNumber(tx.riNumber || '');
+    setEditPhotos(tx.photos || []);
+
     setSearchQuery('');
     setSelectedItem(null);
     setQuantityInput(1);
@@ -222,6 +290,18 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
         type: editType,
         notes: editNotes,
         items: editCartItems,
+        // Update Inbound fields
+        ...(editType === 'IN' ? {
+            supplierName: editSupplierName || undefined,
+            poNumber: editPoNumber || undefined,
+            riNumber: editRiNumber || undefined,
+            photos: editPhotos.length > 0 ? editPhotos : undefined
+        } : {
+            supplierName: undefined,
+            poNumber: undefined,
+            riNumber: undefined,
+            photos: undefined
+        })
     };
 
     onUpdateTransaction(updatedTx);
@@ -335,10 +415,10 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
   );
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in flex flex-col h-full">
       {/* View Only Banner */}
       {!canEdit && (
-         <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg flex items-center gap-3">
+         <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg flex items-center gap-3 flex-shrink-0">
             <ShieldAlert className="w-5 h-5" />
             <div className="text-sm">
                 <span className="font-bold">Viewer Mode:</span> You have read-only access to transactions history.
@@ -347,7 +427,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
       )}
 
       {/* Tabs */}
-      <div className="flex space-x-4 border-b border-slate-200">
+      <div className="flex space-x-4 border-b border-slate-200 flex-shrink-0">
         {canEdit && (
             <button
             onClick={() => setActiveTab('new')}
@@ -365,7 +445,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
       </div>
 
       {activeTab === 'new' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto">
           {/* Left: Input Form */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -407,6 +487,79 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                   </div>
                 </div>
               </div>
+              
+              {/* Inbound Specific Fields */}
+              {type === 'IN' && (
+                  <div className="bg-emerald-50/50 p-4 rounded-lg border border-emerald-100 mb-6 space-y-4 animate-in fade-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-emerald-800 flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          Inbound Document Details
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">Supplier Name</label>
+                              <input 
+                                  type="text"
+                                  value={supplierName}
+                                  onChange={(e) => setSupplierName(e.target.value)}
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                                  placeholder="Type supplier name..."
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">PO Number (Purchase Order)</label>
+                              <input 
+                                  type="text"
+                                  value={poNumber}
+                                  onChange={(e) => setPoNumber(e.target.value)}
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                                  placeholder="e.g. PO-2023-001"
+                              />
+                          </div>
+                          <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">No. RI / Surat Jalan</label>
+                              <input 
+                                  type="text"
+                                  value={riNumber}
+                                  onChange={(e) => setRiNumber(e.target.value)}
+                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                                  placeholder="e.g. SJ-12345"
+                              />
+                          </div>
+                          
+                          {/* Photo Upload */}
+                          <div className="col-span-1 md:col-span-2">
+                               <label className="block text-xs font-medium text-slate-600 mb-1">Document Photos / Evidence</label>
+                               <div className="flex items-center gap-4">
+                                   <label className="flex items-center gap-2 cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-lg text-sm text-slate-600 transition-colors">
+                                       <Camera className="w-4 h-4" />
+                                       <span>Upload Photos</span>
+                                       <input 
+                                           type="file" 
+                                           multiple 
+                                           accept="image/*"
+                                           onChange={(e) => handlePhotoUpload(e, 'new')}
+                                           className="hidden"
+                                       />
+                                   </label>
+                                   <div className="flex gap-2 overflow-x-auto pb-1">
+                                       {photos.map((p, idx) => (
+                                           <div key={idx} className="relative w-10 h-10 flex-shrink-0 group">
+                                               <img src={p} alt={`preview-${idx}`} className="w-full h-full object-cover rounded-md border border-slate-200" />
+                                               <button 
+                                                    onClick={() => removePhoto(idx, 'new')}
+                                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                               >
+                                                   <X className="w-3 h-3" />
+                                               </button>
+                                           </div>
+                                       ))}
+                                   </div>
+                               </div>
+                          </div>
+                      </div>
+                  </div>
+              )}
 
               {/* Autocomplete Item Selection */}
               {renderItemInput('new', searchRef)}
@@ -417,7 +570,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none h-20 resize-none"
-                  placeholder="Reference number, supplier name, or reason..."
+                  placeholder="Reference number, additional details..."
                 />
               </div>
             </div>
@@ -425,15 +578,15 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
 
           {/* Right: Cart Summary */}
           <div className="lg:col-span-1">
-             <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+             <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
                   <h4 className="font-semibold text-slate-800 flex justify-between items-center">
                     Current Batch
                     <span className="bg-blue-100 text-blue-700 py-0.5 px-2 rounded-full text-xs">{cartItems.length} Items</span>
                   </h4>
                 </div>
                 
-                <div className="flex-1 p-4 overflow-y-auto max-h-[400px] space-y-3">
+                <div className="flex-1 p-4 overflow-y-auto max-h-[400px] space-y-3 custom-scrollbar">
                   {cartItems.length === 0 ? (
                     <div className="text-center py-10 text-slate-400 text-sm">
                       <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
@@ -459,7 +612,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                   )}
                 </div>
 
-                <div className="p-4 border-t border-slate-100 mt-auto">
+                <div className="p-4 border-t border-slate-100 mt-auto bg-white">
                    <button
                      onClick={handleSubmitTransaction}
                      disabled={cartItems.length === 0}
@@ -473,17 +626,17 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
           </div>
         </div>
       ) : (
-        // History Tab
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-             <table className="w-full text-left border-collapse">
-               <thead>
-                 <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                   <th className="px-6 py-4">Date</th>
-                   <th className="px-6 py-4">Type</th>
-                   <th className="px-6 py-4">Items Count</th>
-                   <th className="px-6 py-4">Notes</th>
-                   <th className="px-6 py-4 text-right">Action</th>
+        // History Tab with Freeze Panel
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
+          <div className="overflow-auto flex-1 custom-scrollbar">
+             <table className="w-full text-left border-collapse min-w-[800px]">
+               <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                 <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                   <th className="px-6 py-4 bg-slate-50">Date</th>
+                   <th className="px-6 py-4 bg-slate-50">Type</th>
+                   <th className="px-6 py-4 bg-slate-50">Items Count</th>
+                   <th className="px-6 py-4 bg-slate-50">Details</th>
+                   <th className="px-6 py-4 text-right bg-slate-50">Action</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-200 text-sm">
@@ -506,7 +659,25 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                         <td className="px-6 py-4 text-slate-600">
                           {tx.items.length} Items ({tx.items.reduce((acc, i) => acc + i.totalBaseQuantity, 0)} Total Base Qty)
                         </td>
-                        <td className="px-6 py-4 text-slate-500 max-w-xs truncate">{tx.notes || '-'}</td>
+                        <td className="px-6 py-4 text-slate-500 max-w-xs">
+                             <div className="flex flex-col gap-0.5">
+                                <span className="truncate">{tx.notes || '-'}</span>
+                                {tx.type === 'IN' && (
+                                    <span className="text-[10px] text-slate-400 flex flex-col gap-0.5 mt-1">
+                                        {tx.supplierName && (
+                                            <span className="flex items-center gap-1 font-medium text-slate-600">
+                                                <Truck className="w-3 h-3" /> {tx.supplierName}
+                                            </span>
+                                        )}
+                                        <div className="flex gap-1 flex-wrap">
+                                            {tx.poNumber && <span className="bg-slate-100 px-1 rounded">PO: {tx.poNumber}</span>}
+                                            {tx.riNumber && <span className="bg-slate-100 px-1 rounded">RI: {tx.riNumber}</span>}
+                                            {tx.photos && tx.photos.length > 0 && <ImageIcon className="w-3 h-3" />}
+                                        </div>
+                                    </span>
+                                )}
+                             </div>
+                        </td>
                         <td className="px-6 py-4 text-right">
                            {/* Even viewers can 'view' details, so we keep the button but maybe change icon/label if read-only */}
                            <button 
@@ -529,7 +700,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
       {isEditModalOpen && editingTransaction && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
            <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0">
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
                   <div className="flex items-center gap-2">
                      <div className="bg-blue-100 p-2 rounded-lg">
                         <Edit3 className="w-4 h-4 text-blue-600" />
@@ -541,7 +712,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                   </button>
               </div>
 
-              <div className="overflow-y-auto p-6 space-y-6 flex-1">
+              <div className="overflow-y-auto p-6 space-y-6 flex-1 custom-scrollbar">
                  {/* Top Controls - Disabled if not editable */}
                  <fieldset disabled={!canEdit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -573,6 +744,74 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                         </div>
                     </div>
 
+                    {/* Edit Inbound specific fields */}
+                    {editType === 'IN' && (
+                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                             <h4 className="text-sm font-bold text-slate-700 mb-3">Inbound Details</h4>
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-600 mb-1">Supplier Name</label>
+                                    <input 
+                                        type="text"
+                                        value={editSupplierName}
+                                        onChange={(e) => setEditSupplierName(e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                        placeholder="Supplier Name..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-600 mb-1">PO Number</label>
+                                    <input 
+                                        type="text"
+                                        value={editPoNumber}
+                                        onChange={(e) => setEditPoNumber(e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-600 mb-1">RI / Surat Jalan</label>
+                                    <input 
+                                        type="text"
+                                        value={editRiNumber}
+                                        onChange={(e) => setEditRiNumber(e.target.value)}
+                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                    />
+                                </div>
+                                <div className="col-span-1 md:col-span-2">
+                                     <label className="block text-xs font-medium text-slate-600 mb-1">Photos</label>
+                                     <div className="flex gap-2 flex-wrap">
+                                         {editPhotos.map((p, idx) => (
+                                             <div key={idx} className="relative w-16 h-16 group">
+                                                 <img src={p} alt="doc" className="w-full h-full object-cover rounded border border-slate-300" />
+                                                  {canEdit && (
+                                                    <button 
+                                                        onClick={() => removePhoto(idx, 'edit')}
+                                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                  )}
+                                             </div>
+                                         ))}
+                                         {canEdit && (
+                                             <label className="w-16 h-16 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded text-slate-400 cursor-pointer hover:bg-slate-50 hover:border-slate-400">
+                                                 <Upload className="w-4 h-4" />
+                                                 <span className="text-[9px] mt-1">Upload</span>
+                                                 <input 
+                                                    type="file" 
+                                                    multiple 
+                                                    accept="image/*"
+                                                    onChange={(e) => handlePhotoUpload(e, 'edit')}
+                                                    className="hidden"
+                                                 />
+                                             </label>
+                                         )}
+                                     </div>
+                                </div>
+                             </div>
+                         </div>
+                    )}
+
                     {/* Cart Edit Area */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div className="lg:col-span-2">
@@ -599,7 +838,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                                 Items in Transaction
                                 <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs">{editCartItems.length}</span>
                             </h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                                 {editCartItems.map((item, idx) => (
                                     <div key={idx} className="bg-white p-3 rounded border border-slate-200 flex justify-between items-start group">
                                         <div>
@@ -625,7 +864,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({ inventory, tran
                  </fieldset>
               </div>
 
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white sticky bottom-0 z-10">
                  <button 
                     onClick={() => setIsEditModalOpen(false)}
                     className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"

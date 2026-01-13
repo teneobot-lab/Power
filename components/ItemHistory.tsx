@@ -169,9 +169,9 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
   }, [filteredHistory]);
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in flex flex-col h-full">
       {/* Filters Card */}
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+      <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex-shrink-0">
         <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-slate-800 font-semibold">
                 <Filter className="w-5 h-5 text-blue-600" />
@@ -287,7 +287,7 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
       </div>
 
       {/* Summary Stats for Filtered Data */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-shrink-0">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
            <div>
              <p className="text-xs text-slate-500 font-medium">Filtered Movements</p>
@@ -317,18 +317,18 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
         </div>
       </div>
 
-      {/* History Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[600px] md:min-w-0">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                {isVisible('date') && <th className="px-4 py-3 sm:px-6 sm:py-4">Date</th>}
-                {isVisible('name') && <th className="px-4 py-3 sm:px-6 sm:py-4">Item Name</th>}
-                {isVisible('type') && <th className="px-4 py-3 sm:px-6 sm:py-4">Type</th>}
-                {isVisible('qty') && <th className="px-4 py-3 sm:px-6 sm:py-4">Qty</th>}
-                {isVisible('total') && <th className="px-6 py-4">Total Base</th>}
-                {isVisible('notes') && <th className="px-6 py-4">Notes</th>}
+      {/* History Table Container */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
+        <div className="overflow-auto flex-1 custom-scrollbar">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+              <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                {isVisible('date') && <th className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50">Date</th>}
+                {isVisible('name') && <th className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50">Item Name</th>}
+                {isVisible('type') && <th className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50">Type</th>}
+                {isVisible('qty') && <th className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50">Qty</th>}
+                {isVisible('total') && <th className="px-6 py-4 bg-slate-50">Total Base</th>}
+                {isVisible('notes') && <th className="px-6 py-4 bg-slate-50">Notes</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 text-sm">

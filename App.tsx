@@ -460,9 +460,9 @@ const App: React.FC = () => {
       </aside>
 
       {/* Main Content Wrapper */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         
-        {/* Mobile Header */}
+        {/* Mobile Header (Fixed) */}
         <header className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between flex-shrink-0 z-30">
            <div className="flex items-center gap-2 font-bold text-slate-900">
              <Boxes className="w-6 h-6 text-blue-600" /> 
@@ -484,127 +484,129 @@ const App: React.FC = () => {
            </div>
         </header>
 
-        {/* Desktop Header & Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-            <header className="hidden md:flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-slate-900">
-                    {currentView === AppView.DASHBOARD && 'Dashboard Overview'}
-                    {currentView === AppView.INVENTORY && 'Inventory Management'}
-                    {currentView === AppView.TRANSACTIONS && 'In/Out Transactions'}
-                    {currentView === AppView.HISTORY && 'Item History Logs'}
-                    {currentView === AppView.SUPPLIERS && 'Supplier Management'}
-                    {currentView === AppView.ADMIN && 'System Administration'}
-                    {currentView === AppView.AI_ASSISTANT && 'AI Insights & Chat'}
-                    </h1>
-                    <p className="text-slate-500 text-sm mt-1">Manage your warehouse efficiently.</p>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                    {/* Cloud Status Indicator */}
-                    {settings.viteGasUrl && (
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                            {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
-                            {isCloudConnected ? 'Cloud Active' : 'Offline'}
-                        </div>
-                    )}
-
-                    {isSaving && (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-white px-3 py-1.5 rounded-full shadow-sm animate-pulse border border-slate-100">
-                            <SaveIcon className="w-3 h-3" />
-                            Syncing...
-                        </div>
-                    )}
-                    
-                    <button 
-                    onClick={handleRefresh}
-                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-white rounded-full transition-colors"
-                    title="Refresh Data"
-                    >
-                    <RefreshCw className="w-5 h-5" />
-                    </button>
-
-                    <div className="relative">
-                    <button className="p-2 text-slate-400 hover:bg-white hover:text-slate-600 rounded-full transition-colors relative">
-                        <Bell className="w-6 h-6" />
-                        {notifications.length > 0 && (
-                        <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-slate-50 rounded-full"></span>
-                        )}
-                    </button>
+        {/* Global Desktop Header (Sticky/Fixed) */}
+        <header className="hidden md:flex justify-between items-center p-8 pb-4 shrink-0 bg-slate-50 z-20">
+            <div>
+                <h1 className="text-2xl font-bold text-slate-900">
+                {currentView === AppView.DASHBOARD && 'Dashboard Overview'}
+                {currentView === AppView.INVENTORY && 'Inventory Management'}
+                {currentView === AppView.TRANSACTIONS && 'In/Out Transactions'}
+                {currentView === AppView.HISTORY && 'Item History Logs'}
+                {currentView === AppView.SUPPLIERS && 'Supplier Management'}
+                {currentView === AppView.ADMIN && 'System Administration'}
+                {currentView === AppView.AI_ASSISTANT && 'AI Insights & Chat'}
+                </h1>
+                <p className="text-slate-500 text-sm mt-1">Manage your warehouse efficiently.</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+                {/* Cloud Status Indicator */}
+                {settings.viteGasUrl && (
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                        {isCloudConnected ? 'Cloud Active' : 'Offline'}
                     </div>
-                </div>
-            </header>
+                )}
 
-            {/* Notifications Banner */}
-            {notifications.length > 0 && (
-            <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in">
+                {isSaving && (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-white px-3 py-1.5 rounded-full shadow-sm animate-pulse border border-slate-100">
+                        <SaveIcon className="w-3 h-3" />
+                        Syncing...
+                    </div>
+                )}
+                
+                <button 
+                onClick={handleRefresh}
+                className="p-2 text-slate-500 hover:text-blue-600 hover:bg-white rounded-full transition-colors"
+                title="Refresh Data"
+                >
+                <RefreshCw className="w-5 h-5" />
+                </button>
+
+                <div className="relative">
+                <button className="p-2 text-slate-400 hover:bg-white hover:text-slate-600 rounded-full transition-colors relative">
+                    <Bell className="w-6 h-6" />
+                    {notifications.length > 0 && (
+                    <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 border-2 border-slate-50 rounded-full"></span>
+                    )}
+                </button>
+                </div>
+            </div>
+        </header>
+
+        {/* Notifications Banner - Part of the scrollable area or fixed? Better fixed under header */}
+        {notifications.length > 0 && (
+            <div className="mx-4 md:mx-8 mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
                 <span className="font-bold">Alert:</span> {notifications[0]}
             </div>
-            )}
+        )}
 
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 md:pb-0">
-            {currentView === AppView.DASHBOARD && <Dashboard items={items} />}
-            
-            {currentView === AppView.INVENTORY && (
-                <InventoryTable 
-                items={items} 
-                onAddItem={addItem} 
-                onUpdateItem={updateItem} 
-                onDeleteItem={deleteItem}
-                userRole={currentUser.role}
-                columns={tablePrefs.inventory}
-                onToggleColumn={(id) => updateColumnVisibility('inventory', id)}
-                />
-            )}
-
-            {currentView === AppView.TRANSACTIONS && (
-                <TransactionManager 
-                inventory={items}
-                transactions={transactions}
-                onProcessTransaction={processTransaction}
-                onUpdateTransaction={updateTransaction}
-                userRole={currentUser.role}
-                />
-            )}
-
-            {currentView === AppView.HISTORY && (
-                <ItemHistory 
-                  transactions={transactions} 
-                  items={items} 
-                  columns={tablePrefs.history}
-                  onToggleColumn={(id) => updateColumnVisibility('history', id)}
-                />
-            )}
-
-            {currentView === AppView.SUPPLIERS && (
-                <SupplierManager 
-                suppliers={suppliers}
-                onAddSupplier={addSupplier}
-                onUpdateSupplier={updateSupplier}
-                onDeleteSupplier={deleteSupplier}
-                userRole={currentUser.role}
-                columns={tablePrefs.suppliers}
-                onToggleColumn={(id) => updateColumnVisibility('suppliers', id)}
-                />
-            )}
-
-            {currentView === AppView.ADMIN && currentUser.role === 'admin' && (
-                <AdminPanel 
-                settings={settings}
-                onUpdateSettings={updateSettings}
-                users={users}
-                onAddUser={addUser}
-                onUpdateUser={updateUser}
-                onDeleteUser={deleteUser}
-                />
-            )}
-            
-            {currentView === AppView.AI_ASSISTANT && (
-                <AIAssistant 
+        {/* Main Content Area - Scrollable */}
+        <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
+            <div className="h-full w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {currentView === AppView.DASHBOARD && <Dashboard items={items} />}
+                
+                {currentView === AppView.INVENTORY && (
+                    <InventoryTable 
                     items={items} 
-                    apiKey={settings.geminiApiKey} 
-                />
-            )}
+                    onAddItem={addItem} 
+                    onUpdateItem={updateItem} 
+                    onDeleteItem={deleteItem}
+                    userRole={currentUser.role}
+                    columns={tablePrefs.inventory}
+                    onToggleColumn={(id) => updateColumnVisibility('inventory', id)}
+                    />
+                )}
+
+                {currentView === AppView.TRANSACTIONS && (
+                    <TransactionManager 
+                    inventory={items}
+                    transactions={transactions}
+                    onProcessTransaction={processTransaction}
+                    onUpdateTransaction={updateTransaction}
+                    userRole={currentUser.role}
+                    suppliers={suppliers}
+                    />
+                )}
+
+                {currentView === AppView.HISTORY && (
+                    <ItemHistory 
+                    transactions={transactions} 
+                    items={items} 
+                    columns={tablePrefs.history}
+                    onToggleColumn={(id) => updateColumnVisibility('history', id)}
+                    />
+                )}
+
+                {currentView === AppView.SUPPLIERS && (
+                    <SupplierManager 
+                    suppliers={suppliers}
+                    onAddSupplier={addSupplier}
+                    onUpdateSupplier={updateSupplier}
+                    onDeleteSupplier={deleteSupplier}
+                    userRole={currentUser.role}
+                    columns={tablePrefs.suppliers}
+                    onToggleColumn={(id) => updateColumnVisibility('suppliers', id)}
+                    />
+                )}
+
+                {currentView === AppView.ADMIN && currentUser.role === 'admin' && (
+                    <AdminPanel 
+                    settings={settings}
+                    onUpdateSettings={updateSettings}
+                    users={users}
+                    onAddUser={addUser}
+                    onUpdateUser={updateUser}
+                    onDeleteUser={deleteUser}
+                    />
+                )}
+                
+                {currentView === AppView.AI_ASSISTANT && (
+                    <AIAssistant 
+                        items={items} 
+                        apiKey={settings.geminiApiKey} 
+                    />
+                )}
             </div>
         </div>
       </div>

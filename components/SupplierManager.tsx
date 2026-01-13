@@ -89,9 +89,9 @@ const SupplierManager: React.FC<SupplierManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in flex flex-col h-full">
       {/* Header & Actions */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 flex-shrink-0">
         <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 w-full sm:w-auto shadow-sm">
           <Search className="w-5 h-5 text-slate-400" />
           <input 
@@ -143,17 +143,17 @@ const SupplierManager: React.FC<SupplierManagerProps> = ({
         </div>
       </div>
 
-      {/* Suppliers Grid/List */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-         <div className="overflow-x-auto">
-           <table className="w-full text-left border-collapse">
-             <thead>
-               <tr className="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                 {isVisible('company') && <th className="px-6 py-4">Company Name</th>}
-                 {isVisible('contact') && <th className="px-6 py-4">Contact Person</th>}
-                 {isVisible('info') && <th className="px-6 py-4">Contact Info</th>}
-                 {isVisible('address') && <th className="px-6 py-4">Address</th>}
-                 <th className="px-6 py-4 text-right">Actions</th>
+      {/* Suppliers Grid/List with Freeze Panel */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
+         <div className="overflow-auto flex-1 custom-scrollbar">
+           <table className="w-full text-left border-collapse min-w-[800px]">
+             <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+               <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                 {isVisible('company') && <th className="px-6 py-4 bg-slate-50">Company Name</th>}
+                 {isVisible('contact') && <th className="px-6 py-4 bg-slate-50">Contact Person</th>}
+                 {isVisible('info') && <th className="px-6 py-4 bg-slate-50">Contact Info</th>}
+                 {isVisible('address') && <th className="px-6 py-4 bg-slate-50">Address</th>}
+                 <th className="px-6 py-4 text-right bg-slate-50">Actions</th>
                </tr>
              </thead>
              <tbody className="divide-y divide-slate-200">
