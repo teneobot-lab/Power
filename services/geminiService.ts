@@ -7,7 +7,6 @@ declare var process: {
   }
 };
 
-// Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
   return JSON.stringify(items.map(item => ({
     name: item.name,
@@ -21,7 +20,6 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
   })));
 };
 
-// Helper to get AI Client safely
 const getClient = (apiKey?: string) => {
   const finalKey = process.env.API_KEY || apiKey;
   if (!finalKey) return null;
@@ -31,13 +29,8 @@ const getClient = (apiKey?: string) => {
 export const getInventoryInsights = async (items: InventoryItem[], apiKey?: string): Promise<string> => {
   try {
     const ai = getClient(apiKey);
-    
-    if (!ai) {
-      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
-    }
-    
+    if (!ai) return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
     const inventoryData = formatInventoryContext(items);
-    
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `
@@ -47,16 +40,15 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
         Provide a concise executive summary (max 300 words) that covers:
         1. Overall stock health (Are we overstocked/understocked?).
         2. Identify top 3 items that need immediate attention (reorder or liquidation).
-        3. A quick financial valuation summary using Rupiah (Rp).
+        3. A quick financial valuation summary using Rupiah (Rp). Format numbers correctly (e.g., Rp 1.000.000).
         
-        Format the output as clean Markdown.
+        Format the output as clean Markdown in Indonesian.
       `,
     });
-
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Please check if your API Key is valid in the Admin Panel.";
+    return "Gagal menghasilkan insight. Cek API Key di Admin Panel.";
   }
 };
 
@@ -67,39 +59,33 @@ export const chatWithInventoryBot = async (
 ): Promise<string> => {
   try {
     const ai = getClient(apiKey);
-
-    if (!ai) {
-      return "I cannot reply because the API Key is missing. Please configure it in the Admin Panel.";
-    }
-
+    if (!ai) return "Sistem AI tidak dapat membalas karena API Key belum dikonfigurasi.";
     const inventoryData = formatInventoryContext(items);
-    
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: `
-          You are "SmartStock Agent", a highly intelligent AI assistant for an Indonesian warehouse manager.
+          Anda adalah "SmartStock Agent", asisten AI cerdas untuk manajer gudang di Indonesia.
 
-          **YOUR CAPABILITIES:**
-          1. **General Intelligence:** Answer questions, solve problems, write emails, or chat casually.
-          2. **Inventory Expert:** Use the provided real-time warehouse inventory data.
+          **KEMAMPUAN ANDA:**
+          1. **Kecerdasan Umum:** Jawab pertanyaan, selesaikan masalah, tulis email, atau ngobrol santai.
+          2. **Ahli Inventaris:** Gunakan data inventaris gudang real-time yang disediakan.
 
-          **CURRENT INVENTORY CONTEXT (JSON):**
+          **KONTEKS INVENTARIS SAAT INI (JSON):**
           ${inventoryData}
           
-          **GUIDELINES:**
-          - If the user asks about stock or value, strictly use the JSON data provided.
-          - ALWAYS format currency in Indonesian Rupiah (Rp) and use thousand separators (e.g., Rp 10.000).
-          - Be professional, concise, and helpful.
-          - Use Indonesian or English as requested by the user.
+          **PANDUAN:**
+          - Jika user bertanya tentang stok atau nilai, gunakan data JSON tersebut.
+          - SELALU gunakan format mata uang Rupiah (Rp) dan gunakan pemisah ribuan (contoh: Rp 10.000).
+          - Bersikap profesional, ringkas, dan membantu.
+          - Gunakan bahasa Indonesia secara utama kecuali user bertanya dalam bahasa lain.
         `,
       },
     });
-
     const response = await chat.sendMessage({ message: query });
-    return response.text || "I didn't catch that.";
+    return response.text || "Maaf, saya tidak mengerti.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting. Please verify your API Key in the Admin Panel.";
+    return "Maaf, ada gangguan koneksi ke AI. Mohon verifikasi API Key Anda.";
   }
 };
