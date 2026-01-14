@@ -44,6 +44,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
     setInputValue('');
     setIsLoading(true);
 
+    // We pass the apiKey even if it's empty, the service handles the fallback/error message
     const responseText = await chatWithInventoryBot(inputValue, items, apiKey);
 
     const modelMsg: ChatMessage = {
@@ -95,7 +96,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
         </div>
         <button 
           onClick={handleGenerateReport}
-          disabled={isLoading || !apiKey}
+          disabled={isLoading}
           className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-all shadow-sm disabled:opacity-50"
         >
           <BarChart2 className="w-3.5 h-3.5" />
@@ -103,10 +104,11 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
         </button>
       </div>
       
+      {/* Helper Banner (Only if Key is missing, but doesn't block UI) */}
       {!apiKey && (
-         <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 text-xs text-amber-800 flex items-center gap-2 flex-shrink-0">
+         <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 text-xs text-blue-800 flex items-center gap-2 flex-shrink-0">
             <AlertCircle className="w-4 h-4" />
-            <span>API Key not configured. Please set "Gemini API Key" in Admin Panel &rarr; System Settings.</span>
+            <span>Tip: Configure "Gemini API Key" in Admin Panel for full functionality.</span>
          </div>
       )}
 
@@ -162,13 +164,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder={apiKey ? "Ask about inventory, write an email, or general questions..." : "Configure API Key first..."}
+            placeholder="Ask about inventory, write an email, or general questions..."
             className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none text-sm transition-all"
-            disabled={isLoading || !apiKey}
+            disabled={isLoading}
           />
           <button 
             type="submit" 
-            disabled={!inputValue.trim() || isLoading || !apiKey}
+            disabled={!inputValue.trim() || isLoading}
             className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
             <Send className="w-4 h-4" />

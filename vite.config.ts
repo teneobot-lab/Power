@@ -8,10 +8,10 @@ export default defineConfig({
     host: true, // Listen on all network interfaces
     port: 5173,
     // Proxy configuration for Local Development
-    // This forwards '/api' requests to your VPS backend server
+    // This forwards '/api' requests to your local Express server (port 3000)
     proxy: {
       '/api': {
-        target: 'http://157.245.59.65:3000', // DIRECT TO VPS IP
+        target: 'http://localhost:3000', // Changed from remote VPS to localhost for reliable development
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path 

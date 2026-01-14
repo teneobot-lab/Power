@@ -22,6 +22,7 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     // Logic URL construction:
     // Ensure no double slashes and correct prefix
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    // Correctly handle GAS vs Standard API
     const url = isGas ? baseUrl : `${cleanBase}/api/data`;
 
     console.log(`📡 Fetching data from: ${url}`);
@@ -33,9 +34,16 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
       }
     });
     
+    // Check if Nginx returned the HTML 404 page instead of JSON
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+        console.error(`❌ Server Error at ${url}: Received HTML instead of JSON.`);
+        throw new Error("Server Error: Received HTML instead of JSON. The API endpoint URL might be incorrect or the server is returning a default page.");
+    }
+
     if (response.status === 404) {
          console.error(`❌ 404 Not Found at: ${url}`);
-         throw new Error(`Endpoint not found (404) at: ${url}. Check server routes.`);
+         throw new Error(`Endpoint not found (404) at: ${url}. Check server routes or ensure the backend server is running.`);
     }
 
     if (!response.ok) {
@@ -101,7 +109,7 @@ export const syncBackendData = async (
          if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
              return { success: false, message: 'BLOCKED: Browser blocked HTTP. Use "/" in Admin Panel.' };
          }
-         return { success: false, message: 'Connection refused. Check VPS Firewall.' };
+         return { success: false, message: 'Connection refused. Check Backend Server.' };
     }
     
     return { success: false, message: error.message || 'Network error' };
