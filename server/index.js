@@ -15,8 +15,8 @@ app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
 // DB Config
 const dbConfig = {
     host: process.env.DB_HOST || '127.0.0.1',
-    user: process.env.DB_USER || 'smartstock',
-    password: process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : 'smartstock_pass',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'smartstock_db',
     waitForConnections: true,
     connectionLimit: 10,
@@ -24,6 +24,23 @@ const dbConfig = {
 };
 
 const pool = mysql.createPool(dbConfig);
+
+// Helper to format ISO Date string to MySQL Datetime format
+const formatSqlValue = (val) => {
+    if (val === undefined || val === null) return null;
+    
+    // If it's a string that looks like an ISO date (e.g., 2026-01-14T16:33:48.548Z)
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+        return val.slice(0, 19).replace('T', ' ');
+    }
+    
+    // If it's a complex object (Array/Object), stringify it for LONGTEXT columns
+    if (typeof val === 'object') {
+        return JSON.stringify(val);
+    }
+    
+    return val;
+};
 
 // Test DB Connection on Startup
 pool.getConnection()
@@ -35,15 +52,13 @@ pool.getConnection()
         console.error("❌ Database Connection Failed:", err.message);
     });
 
-// 1. Root Route
 app.get('/', (req, res) => {
-    res.send('SmartStock API is Running. Use /api/data to fetch items.');
+    res.send('SmartStock API is Running.');
 });
 
 // 2. Main Data Endpoint
 app.get('/api/data', async (req, res) => {
     try {
-        // Parallel queries for speed
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
@@ -59,7 +74,6 @@ app.get('/api/data', async (req, res) => {
             settings[row.setting_key] = val;
         });
 
-        // Formatter
         const formatRow = (row) => {
             const newRow = {};
             for (const key in row) {
@@ -92,7 +106,7 @@ app.get('/api/data', async (req, res) => {
 // 3. Sync Endpoint
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
-    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing data' });
+    if (!type) return res.status(400).json({ status: 'error', message: 'Missing type' });
 
     const connection = await pool.getConnection();
     try {
@@ -101,35 +115,35 @@ app.post('/api/sync', async (req, res) => {
 
         if (type === 'settings') {
              await connection.query('DELETE FROM settings');
-             if (Object.keys(data).length > 0) {
+             if (data && Object.keys(data).length > 0) {
                 const values = Object.keys(data).map(k => {
                     let val = data[k];
                     if (typeof val === 'object') val = JSON.stringify(val);
                     return [k, val];
                 });
-                if(values.length > 0) await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
+                await connection.query('INSERT INTO settings (setting_key, setting_value) VALUES ?', [values]);
              }
         } else {
-            await connection.query(`DELETE FROM ${type}`);
-            if (data.length > 0) {
+            // Secure table name with backticks
+            await connection.query(`DELETE FROM \`${type}\``);
+            
+            if (Array.isArray(data) && data.length > 0) {
                 const keys = Object.keys(data[0]);
                 const snakeKeys = keys.map(toSnake);
-                const sql = `INSERT INTO ${type} (${snakeKeys.join(', ')}) VALUES ?`;
-                const values = data.map(item => keys.map(k => {
-                    let val = item[k];
-                    if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
-                    if (val === undefined) val = null;
-                    if (val instanceof Date) val = val.toISOString().slice(0, 19).replace('T', ' ');
-                    return val;
-                }));
+                
+                // Construct batch insert values with date formatting
+                const values = data.map(item => keys.map(k => formatSqlValue(item[k])));
+                
+                const sql = `INSERT INTO \`${type}\` (${snakeKeys.map(k => `\`${k}\``).join(', ')}) VALUES ?`;
                 await connection.query(sql, [values]);
             }
         }
         await connection.commit();
+        console.log(`✅ Sync ${type} successful`);
         res.json({ status: 'success' });
     } catch (error) {
         await connection.rollback();
-        console.error("Sync Error:", error);
+        console.error(`❌ Sync ${type} Gagal:`, error.message);
         res.status(500).json({ status: 'error', message: error.message });
     } finally {
         connection.release();
@@ -137,5 +151,5 @@ app.post('/api/sync', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Backend running on port ${PORT}`);
+    console.log(`🚀 Backend running on port ${PORT}`);
 });
