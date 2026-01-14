@@ -64,14 +64,6 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       });
   }, [items, debouncedSearchTerm, categoryFilter]);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val);
-  };
-
   // --- Excel Import/Export Logic ---
 
   const handleDownloadTemplate = () => {
@@ -120,6 +112,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     let skippedCount = 0;
 
     data.forEach((row: any) => {
+       // Map Excel Columns to InventoryItem
+       // Flexible mapping: Check for both "Name" (Template) and "name" (lowercase)
        const name = row['Name'] || row['name'];
        const sku = row['SKU'] || row['sku'];
        const category = row['Category'] || row['category'] || 'Uncategorized';
@@ -130,9 +124,11 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
        const location = row['Location'] || row['location'] || '';
 
        if (!name || !sku) {
+         // Skip invalid rows
          return;
        }
 
+       // Check duplicate SKU in current items OR in the new batch being created
        const existsInState = items.some(i => i.sku === sku);
        const existsInBatch = newItems.some(i => i.sku === sku);
 
@@ -152,7 +148,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
          unitPrice: isNaN(price) ? 0 : price,
          location: String(location),
          lastUpdated: new Date().toISOString(),
-         alternativeUnits: []
+         alternativeUnits: [] // Excel import simple version doesn't support nested units yet
        });
     });
 
@@ -163,6 +159,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
        alert("No new items imported. Check for duplicate SKUs or empty file.");
     }
   };
+
+  // --- End Excel Logic ---
 
   const handleOpenModal = (item?: InventoryItem) => {
     setFormError(null);
@@ -283,6 +281,8 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         </div>
         
         <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-end items-center">
+          
+          {/* Excel Actions */}
           {canEdit && (
             <div className="flex gap-2 mr-2">
                 <button 
@@ -313,6 +313,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
             </div>
           )}
 
+          {/* Column Toggle */}
           <div className="relative" ref={columnMenuRef}>
              <button
                onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)}
@@ -363,6 +364,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         </div>
       </div>
 
+      {/* Table Container with Freeze Panel */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1 custom-scrollbar">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -379,6 +381,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
             <tbody className="divide-y divide-slate-200">
               {filteredItems.length > 0 ? filteredItems.map(item => {
                 const isLowStock = item.quantity <= item.minLevel;
+                // Find largest unit for display
                 const largestUnit = item.alternativeUnits && item.alternativeUnits.length > 0
                     ? [...item.alternativeUnits].sort((a,b) => b.ratio - a.ratio)[0] 
                     : null;
@@ -425,7 +428,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                     )}
                     {isVisible('price') && (
                         <td className="px-4 py-3 sm:px-6 sm:py-4 text-right font-medium text-slate-600">
-                        {formatCurrency(item.unitPrice)}
+                        ${item.unitPrice.toFixed(2)}
                         </td>
                     )}
                     {isVisible('location') && (
@@ -479,6 +482,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         </div>
       </div>
 
+      {/* Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]">
@@ -498,6 +502,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                       {formError}
                   </div>
               )}
+              {/* Fieldset used to disable inputs for viewers */}
               <fieldset disabled={!canEdit} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
@@ -536,12 +541,14 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                     </datalist>
                     </div>
                     
+                    {/* Advanced Unit Config Section */}
                     <div className="col-span-2 bg-slate-50 p-4 rounded-lg border border-slate-200">
                     <div className="flex items-center gap-2 mb-3">
                         <Layers className="w-4 h-4 text-blue-600" />
                         <h4 className="text-sm font-bold text-slate-700 uppercase">Unit Measurement</h4>
                     </div>
                     
+                    {/* Base Unit & Qty */}
                     <div className="grid grid-cols-2 gap-4 mb-4">
                         <div>
                             <label className="block text-xs font-medium text-slate-600 mb-1">Base Unit (Smallest)</label>
@@ -566,6 +573,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                         </div>
                     </div>
 
+                    {/* Alternative Units List */}
                     <div className="space-y-2 mb-3">
                         <label className="block text-xs font-medium text-slate-600">Alternative Units (e.g. Box, Carton)</label>
                         {alternativeUnits.map((u, idx) => (
@@ -589,6 +597,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                         )}
                     </div>
 
+                    {/* Add New Unit */}
                     {canEdit && (
                         <div className="flex gap-2 items-end">
                             <div className="flex-1">
@@ -634,10 +643,11 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                     />
                     </div>
                     <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price (Rp)</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Unit Price ($)</label>
                     <input 
                         type="number" 
                         min="0"
+                        step="0.01"
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:bg-slate-100 disabled:text-slate-500"
                         value={formData.unitPrice}
                         onChange={e => setFormData({...formData, unitPrice: Number(e.target.value)})}

@@ -25,20 +25,16 @@ const dbConfig = {
 
 const pool = mysql.createPool(dbConfig);
 
-/**
- * FIXED: Helper to format values for MySQL.
- * Converts ISO 8601 strings (2026-01-14T16:33:48.548Z) to MySQL DATETIME (2026-01-14 16:33:48).
- */
+// Helper to format ISO Date string to MySQL Datetime format
 const formatSqlValue = (val) => {
     if (val === undefined || val === null) return null;
     
-    // Check if value is an ISO date string
+    // If it's a string that looks like an ISO date (e.g., 2026-01-14T16:33:48.548Z)
     if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
-        // Slice to YYYY-MM-DD HH:MM:SS format
         return val.slice(0, 19).replace('T', ' ');
     }
     
-    // Stringify objects/arrays for LONGTEXT columns
+    // If it's a complex object (Array/Object), stringify it for LONGTEXT columns
     if (typeof val === 'object') {
         return JSON.stringify(val);
     }
@@ -60,7 +56,7 @@ app.get('/', (req, res) => {
     res.send('SmartStock API is Running.');
 });
 
-// Main Data Endpoint
+// 2. Main Data Endpoint
 app.get('/api/data', async (req, res) => {
     try {
         const [inventory] = await pool.query('SELECT * FROM inventory');
@@ -102,17 +98,16 @@ app.get('/api/data', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("API GET Data Error:", error);
+        console.error("API Error:", error);
         res.status(500).json({ status: 'error', message: error.message });
     }
 });
 
-// Sync Endpoint (FIXED)
+// 3. Sync Endpoint
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
     if (!type) return res.status(400).json({ status: 'error', message: 'Missing type' });
 
-    console.log(`📦 Syncing ${type}...`);
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
@@ -147,11 +142,11 @@ app.post('/api/sync', async (req, res) => {
         console.log(`✅ Sync ${type} successful`);
         res.json({ status: 'success' });
     } catch (error) {
-        if (connection) await connection.rollback();
-        console.error(`❌ Sync ${type} FAILED:`, error.message);
+        await connection.rollback();
+        console.error(`❌ Sync ${type} Gagal:`, error.message);
         res.status(500).json({ status: 'error', message: error.message });
     } finally {
-        if (connection) connection.release();
+        connection.release();
     }
 });
 

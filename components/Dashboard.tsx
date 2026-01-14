@@ -79,14 +79,6 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
       }));
   }, [items]);
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0
-    }).format(val);
-  };
-
   return (
     <div className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pb-6">
@@ -96,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 <div className="flex items-center justify-between">
                     <div>
                     <p className="text-sm font-medium text-slate-500">Total Value</p>
-                    <h3 className="text-xl font-bold text-slate-900">{formatCurrency(stats.totalValue)}</h3>
+                    <h3 className="text-2xl font-bold text-slate-900">${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
                     </div>
                     <div className="p-3 bg-blue-50 rounded-lg">
                     <DollarSign className="w-6 h-6 text-blue-600" />
