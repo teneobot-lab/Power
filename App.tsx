@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InventoryItem, AppView, Transaction, Supplier, User, AppSettings, ToastMessage, ToastType, UserRole, TablePreferences } from './types';
 import { INITIAL_INVENTORY, INITIAL_SUPPLIERS, INITIAL_USERS, DEFAULT_SETTINGS, DEFAULT_TABLE_PREFS } from './constants';
@@ -153,7 +154,6 @@ const App: React.FC = () => {
   // Helper for Cloud Sync
   const syncToCloud = async (type: string, data: any) => {
     // Only sync if we have a URL and we are successfully connected
-    // This prevents flooding the logs with errors if the server is unreachable
     if (settings.viteGasUrl && isMounted.current) {
         if (!isCloudConnected) return; // Don't try syncing if we know we are offline
 
@@ -236,7 +236,8 @@ const App: React.FC = () => {
 
   // --- Force Connect Handler ---
   const handleForceConnect = () => {
-      const vpsUrl = 'http://157.245.59.65:3000';
+      // UPDATED TO NEW IP
+      const vpsUrl = 'http://165.22.251.42:3000';
       setSettings(prev => ({ ...prev, viteGasUrl: vpsUrl }));
       saveToStorage('smartstock_settings', { ...settings, viteGasUrl: vpsUrl });
       window.location.reload(); // Hard reload to force fetch
@@ -277,7 +278,7 @@ const App: React.FC = () => {
     }));
   };
 
-  // --- CRUD Handlers (Same as before) ---
+  // --- CRUD Handlers ---
   const addItem = (item: InventoryItem) => {
     if (items.some(i => i.sku === item.sku)) {
       showToast(`SKU ${item.sku} already exists!`, 'error');
@@ -287,7 +288,6 @@ const App: React.FC = () => {
     showToast(`${item.name} added to inventory`, 'success');
   };
 
-  // NEW: Batch Add Handler for Excel Import
   const batchAddItems = (newItems: InventoryItem[]) => {
     setItems(prev => [...prev, ...newItems]);
     showToast(`${newItems.length} items imported successfully!`, 'success');
@@ -438,7 +438,6 @@ const App: React.FC = () => {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {/* Navigation Items */}
           <button 
             onClick={() => setCurrentView(AppView.DASHBOARD)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${currentView === AppView.DASHBOARD ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-slate-800'}`}
@@ -488,7 +487,6 @@ const App: React.FC = () => {
             <span className="font-medium">AI Assistant</span>
           </button>
 
-          {/* Admin Panel Link */}
           {currentUser.role === 'admin' && (
             <div className="pt-4 mt-4 border-t border-slate-800">
                 <button 
@@ -502,7 +500,6 @@ const App: React.FC = () => {
           )}
         </nav>
 
-        {/* User Profile */}
         <div className="p-4 border-t border-slate-800 bg-slate-900">
            <div className="group relative">
              <button className="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-slate-800 transition-colors text-left">
@@ -526,10 +523,7 @@ const App: React.FC = () => {
         </div>
       </aside>
 
-      {/* Main Content Wrapper */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
-        
-        {/* Mobile Header (Fixed) */}
         <header className="md:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between flex-shrink-0 z-30">
            <div className="flex items-center gap-2 font-bold text-slate-900">
              <Boxes className="w-6 h-6 text-blue-600" /> 
@@ -551,7 +545,6 @@ const App: React.FC = () => {
            </div>
         </header>
 
-        {/* Global Desktop Header (Sticky/Fixed) */}
         <header className="hidden md:flex justify-between items-center p-8 pb-4 shrink-0 bg-slate-50 z-20">
             <div>
                 <h1 className="text-2xl font-bold text-slate-900">
@@ -567,7 +560,6 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-3">
-                {/* Cloud Status Indicator */}
                 {settings.viteGasUrl && (
                     <div 
                         title={lastSyncError || "Synced successfully"}
@@ -578,7 +570,6 @@ const App: React.FC = () => {
                     </div>
                 )}
                 
-                {/* Reset Connection Button (To Proxy) */}
                 {!isCloudConnected && settings.viteGasUrl !== '/' && (
                     <button 
                         onClick={handleResetConnection}
@@ -590,7 +581,6 @@ const App: React.FC = () => {
                     </button>
                 )}
 
-                {/* Force VPS Button */}
                 {!isCloudConnected && settings.viteGasUrl === '/' && (
                     <button 
                         onClick={handleForceConnect}
@@ -628,14 +618,12 @@ const App: React.FC = () => {
             </div>
         </header>
 
-        {/* Notifications Banner */}
         {notifications.length > 0 && (
             <div className="mx-4 md:mx-8 mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
                 <span className="font-bold">Alert:</span> {notifications[0]}
             </div>
         )}
         
-        {/* Sync Error Banner */}
         {lastSyncError && (
              <div className="mx-4 md:mx-8 mb-4 bg-rose-50 border border-rose-200 text-rose-800 px-4 py-3 rounded-lg flex items-center gap-2 text-sm animate-fade-in flex-shrink-0">
                 <CloudOff className="w-4 h-4 flex-shrink-0" />
@@ -646,7 +634,6 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {/* Main Content Area - Scrollable */}
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
             <div className="h-full w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
                 {currentView === AppView.DASHBOARD && <Dashboard items={items} />}
@@ -696,7 +683,6 @@ const App: React.FC = () => {
                     />
                 )}
 
-                {/* Modified: Persist AdminPanel in DOM to allow background media playback */}
                 {currentUser.role === 'admin' && (
                     <div className={currentView === AppView.ADMIN ? 'h-full' : 'fixed top-0 left-0 w-px h-px opacity-0 overflow-hidden pointer-events-none'}>
                         <AdminPanel 
