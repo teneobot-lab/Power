@@ -23,11 +23,7 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
 
 // Helper to get AI Client safely
 const getClient = (apiKey?: string) => {
-  // Prioritize the API key from the environment variable as per strict guidelines.
-  // We assume process.env.API_KEY is available and configured.
-  // We also check the passed apiKey for backward compatibility with the existing app's settings UI.
   const finalKey = process.env.API_KEY || apiKey;
-
   if (!finalKey) return null;
   return new GoogleGenAI({ apiKey: finalKey });
 };
@@ -45,13 +41,13 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `
-        Act as a Warehouse Inventory Analyst. Analyze the following inventory data in JSON format:
+        Act as a Warehouse Inventory Analyst in Indonesia. Analyze the following inventory data in JSON format:
         ${inventoryData}
 
         Provide a concise executive summary (max 300 words) that covers:
         1. Overall stock health (Are we overstocked/understocked?).
         2. Identify top 3 items that need immediate attention (reorder or liquidation).
-        3. A quick financial valuation summary.
+        3. A quick financial valuation summary using Rupiah (Rp).
         
         Format the output as clean Markdown.
       `,
@@ -67,8 +63,7 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
 export const chatWithInventoryBot = async (
   query: string, 
   items: InventoryItem[], 
-  apiKey?: string,
-  history: {role: string, parts: {text: string}[]}[] = []
+  apiKey?: string
 ): Promise<string> => {
   try {
     const ai = getClient(apiKey);
@@ -83,21 +78,20 @@ export const chatWithInventoryBot = async (
       model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: `
-          You are "SmartStock Agent", a highly intelligent and capable AI assistant for a warehouse manager.
+          You are "SmartStock Agent", a highly intelligent AI assistant for an Indonesian warehouse manager.
 
           **YOUR CAPABILITIES:**
-          1. **General Intelligence:** You can answer general questions, solve math problems, write professional emails to suppliers, explain concepts, writes code, or chat casually. You are NOT limited to inventory topics.
-          2. **Inventory Expert:** You have real-time access to the warehouse inventory data provided below. When the user asks about stock, prices, or locations, USE this data to be accurate.
+          1. **General Intelligence:** Answer questions, solve problems, write emails, or chat casually.
+          2. **Inventory Expert:** Use the provided real-time warehouse inventory data.
 
           **CURRENT INVENTORY CONTEXT (JSON):**
           ${inventoryData}
           
           **GUIDELINES:**
-          - If the user asks about "stock", "quantities", "value", or "items", strictly use the JSON data provided above.
-          - If the user asks to "Write an email to a supplier" or "Calculate potential profit markup", use your general capabilities.
-          - If the user asks general questions (e.g., "What is the capital of France?", "Help me debug this Python code"), answer them helpfully using your general training.
+          - If the user asks about stock or value, strictly use the JSON data provided.
+          - ALWAYS format currency in Indonesian Rupiah (Rp) and use thousand separators (e.g., Rp 10.000).
           - Be professional, concise, and helpful.
-          - Format currency in USD.
+          - Use Indonesian or English as requested by the user.
         `,
       },
     });
