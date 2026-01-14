@@ -107,7 +107,7 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
-// Sync Endpoint
+// Sync Endpoint (FIXED)
 app.post('/api/sync', async (req, res) => {
     const { type, data } = req.body;
     if (!type) return res.status(400).json({ status: 'error', message: 'Missing type' });

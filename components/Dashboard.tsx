@@ -12,13 +12,16 @@ interface DashboardProps {
 
 const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1'];
 
+// Custom Tooltip Component for Bar Chart
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload; 
+    const data = payload[0].payload; // This contains the full item data we passed
     const item: InventoryItem = data.fullItem;
     
+    // Logic to calculate breakdowns for tooltip
     let breakdown = `${item.quantity} ${item.baseUnit}`;
     if (item.alternativeUnits && item.alternativeUnits.length > 0) {
+        // Find largest unit
         const largest = [...item.alternativeUnits].sort((a,b) => b.ratio - a.ratio)[0];
         const majorQty = Math.floor(item.quantity / largest.ratio);
         const minorQty = item.quantity % largest.ratio;
@@ -47,6 +50,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ items }) => {
+  
   const stats = useMemo(() => {
     const totalItems = items.length;
     const lowStockCount = items.filter(i => i.quantity <= i.minLevel).length;
@@ -71,7 +75,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
       .map(item => ({
         name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
         quantity: item.quantity,
-        fullItem: item 
+        fullItem: item // Pass full item for custom tooltip processing
       }));
   }, [items]);
 
@@ -86,6 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
   return (
     <div className="h-full flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pb-6">
+            {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between">
@@ -136,7 +141,10 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 </div>
             </div>
 
+            {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* Top Stock Levels */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Items by Quantity</h3>
                 <div className="h-[300px] w-full">
@@ -152,6 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 </div>
                 </div>
 
+                {/* Category Distribution */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h3 className="text-lg font-semibold text-slate-800 mb-4">Inventory by Category</h3>
                 <div className="h-[300px] w-full">
