@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Transaction, TransactionType, InventoryItem, TableColumn } from '../types';
 import { Search, Calendar, Filter, ArrowDownLeft, ArrowUpRight, FileText, Check, Search as SearchIcon, Columns } from 'lucide-react';
@@ -56,15 +57,28 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
 
   const isVisible = (id: string) => columns.find(c => c.id === id)?.visible;
 
-  // Enhanced Search Logic (Autocomplete Suggestions) - Uses Debounced Term
+  // Enhanced Autocomplete Suggestions (Fuzzy / MeiliSearch-like)
   const autocompleteSuggestions = useMemo(() => {
     if (!debouncedSearchTerm) return [];
-    const terms = debouncedSearchTerm.toLowerCase().split(/\s+/).filter(t => t.length > 0);
     
-    return items.filter(item => {
-      const searchString = `${item.name} ${item.sku} ${item.category}`.toLowerCase();
-      return terms.every(term => searchString.includes(term));
-    }).slice(0, 5);
+    const query = debouncedSearchTerm.toLowerCase().trim();
+    const tokens = query.split(/\s+/).filter(t => t.length > 0);
+
+    return items
+      .filter(item => {
+        const searchString = `${item.name} ${item.sku} ${item.category}`.toLowerCase();
+        return tokens.every(token => searchString.includes(token));
+      })
+      .sort((a, b) => {
+        const nameA = a.name.toLowerCase();
+        const nameB = b.name.toLowerCase();
+        if (nameA === query) return -1;
+        if (nameB === query) return 1;
+        if (nameA.startsWith(query) && !nameB.startsWith(query)) return -1;
+        if (!nameA.startsWith(query) && nameB.startsWith(query)) return 1;
+        return 0;
+      })
+      .slice(0, 5);
   }, [debouncedSearchTerm, items]);
 
   // Reset navigation index when query changes
@@ -134,11 +148,15 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
     return flattened.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [transactions]);
 
-  // Apply filters to the table using Debounced Search
+  // Apply filters to the table using Debounced Search (Using Multi-word logic too)
   const filteredHistory = useMemo(() => {
+    const query = debouncedSearchTerm.toLowerCase().trim();
+    const tokens = query.split(/\s+/).filter(t => t.length > 0);
+
     return historyData.filter(item => {
-      // Search Term (Name) - matches exact or substring
-      const matchesSearch = item.itemName.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+      // Search Term (Name) - matches multi-word token
+      const itemName = item.itemName.toLowerCase();
+      const matchesSearch = tokens.every(token => itemName.includes(token));
 
       // Date Range
       const itemDate = new Date(item.date);
@@ -389,3 +407,4 @@ const ItemHistory: React.FC<ItemHistoryProps> = ({ transactions, items, columns,
 };
 
 export default ItemHistory;
+    

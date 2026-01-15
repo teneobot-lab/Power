@@ -40,14 +40,14 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 
   // --- Item Selection State ---
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const debouncedSearchQuery = useDebounce(searchQuery, 150); // Faster debounce for snappier feel
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>('');
   const [quantityInput, setQuantityInput] = useState<number | undefined>(undefined);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
   
   // --- Navigation State ---
-  const [activeIndex, setActiveIndex] = useState(-1);
+  const [activeIndex, setActiveIndex] = useState(0); // Start at 0 for auto-select
   const searchInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -102,12 +102,40 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     }
   }, [quantityInput, selectedItem, type, cartItems]);
 
+  // --- SMART AUTOCOMPLETE LOGIC (MeiliSearch-like) ---
   const filteredInventory = useMemo(() => {
     if (!debouncedSearchQuery) return [];
-    return inventory.filter(item => 
-      item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
-      item.sku.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
-    ).slice(0, 8); 
+    
+    const query = debouncedSearchQuery.toLowerCase().trim();
+    const tokens = query.split(/\s+/).filter(t => t.length > 0);
+
+    return inventory
+      .filter(item => {
+        // Gabungkan semua field yang relevan untuk pencarian
+        const searchString = `${item.name} ${item.sku} ${item.category}`.toLowerCase();
+        
+        // Logika "AND": Semua kata yang diketik harus ada di item, urutan tidak masalah
+        // Contoh: "ayam bakso" akan match dengan "Bakso Sapi & Ayam"
+        return tokens.every(token => searchString.includes(token));
+      })
+      .sort((a, b) => {
+        // Prioritas Sorting agar UX lebih cerdas
+        const nameA = a.name.toLowerCase();
+        const nameB = b.name.toLowerCase();
+        
+        // 1. Exact Match paling atas
+        if (nameA === query) return -1;
+        if (nameB === query) return 1;
+
+        // 2. Starts With (awalan nama) lebih prioritas daripada ada di tengah
+        const aStarts = nameA.startsWith(query);
+        const bStarts = nameB.startsWith(query);
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        return 0;
+      })
+      .slice(0, 10); // Batasi hasil agar ringan
   }, [debouncedSearchQuery, inventory]);
 
   // Reset active index when query changes
@@ -134,10 +162,11 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     setValidationError(null);
     setActiveIndex(-1);
 
-    // UX: Auto focus to Quantity input after selection
-    setTimeout(() => {
+    // UX: Navigation Focus Flow -> Pindah ke Qty
+    requestAnimationFrame(() => {
         qtyInputRef.current?.focus();
-    }, 50);
+        qtyInputRef.current?.select(); // Auto select text agar user bisa langsung timpa
+    });
   };
 
   const handleAddToCart = (targetCart: 'new' | 'edit') => {
@@ -161,26 +190,30 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     if (targetCart === 'new') setCartItems([...cartItems, newItem]);
     else setEditCartItems([...editCartItems, newItem]);
     
-    // Reset and focus back to search for rapid entry
+    // UX: Reset and Focus Loop -> Kembali ke Search Bar
     setSelectedItem(null); 
     setSearchQuery(''); 
     setQuantityInput(undefined); 
     setValidationError(null);
     
     if (targetCart === 'new') {
-        setTimeout(() => {
+        requestAnimationFrame(() => {
             searchInputRef.current?.focus();
-        }, 50);
+        });
     }
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    if (!isAutocompleteOpen || filteredInventory.length === 0) {
-        // If user presses Enter and no list is open but there is an exact match in inventory or they typed something
-        // Logic to try to select the first match automatically could go here, 
-        // but typically we want them to see the list.
-        return;
+    // Navigasi saat list tertutup tapi user menekan Enter (Auto-select top result)
+    if (e.key === 'Enter' && filteredInventory.length > 0) {
+       e.preventDefault();
+       // Jika ada index aktif, pilih itu. Jika tidak, pilih hasil paling atas (Index 0)
+       const indexToSelect = activeIndex >= 0 ? activeIndex : 0;
+       handleSelectItem(filteredInventory[indexToSelect]);
+       return;
     }
+
+    if (!isAutocompleteOpen || filteredInventory.length === 0) return;
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -188,11 +221,6 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (activeIndex >= 0 && activeIndex < filteredInventory.length) {
-        handleSelectItem(filteredInventory[activeIndex]);
-      }
     } else if (e.key === 'Escape') {
       setIsAutocompleteOpen(false);
     }
@@ -229,6 +257,8 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
       ...(type === 'IN' ? { supplierName, poNumber, riNumber, photos } : {})
     });
     setCartItems([]); setNotes(''); setPhotos([]); setSupplierName(''); setPoNumber(''); setRiNumber('');
+    // Fokus balik ke search setelah submit
+    requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
   const openEditModal = (tx: Transaction) => {
@@ -295,7 +325,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                     onFocus={() => setIsAutocompleteOpen(true)} 
                     onChange={(e) => setSearchQuery(e.target.value)} 
                     onKeyDown={handleSearchKeyDown}
-                    placeholder="Ketik nama atau SKU..." 
+                    placeholder="Ketik nama atau SKU... (Enter untuk pilih)" 
                     className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                     autoComplete="off" 
                 />
@@ -325,7 +355,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
               <input 
                 ref={target === 'new' ? qtyInputRef : undefined}
                 type="number" 
-                placeholder="Qty" 
+                placeholder="Qty (Enter)" 
                 value={quantityInput ?? ''} 
                 onChange={e => setQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))}
                 onKeyDown={(e) => handleQtyKeyDown(e, target)} 
@@ -355,7 +385,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     <div className="space-y-6 flex flex-col h-full overflow-hidden">
       <div className="flex justify-between items-end border-b border-slate-200">
         <div className="flex space-x-4">
-          {canEdit && <button onClick={() => { setActiveTab('new'); setValidationError(null); }} className={`pb-3 px-2 text-sm font-medium transition-all ${activeTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Input Transaksi</button>}
+          {canEdit && <button onClick={() => { setActiveTab('new'); setValidationError(null); setTimeout(() => searchInputRef.current?.focus(), 100); }} className={`pb-3 px-2 text-sm font-medium transition-all ${activeTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Input Transaksi</button>}
           <button onClick={() => setActiveTab('history')} className={`pb-3 px-2 text-sm font-medium transition-all ${activeTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Riwayat Log</button>
         </div>
         
@@ -391,8 +421,8 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                   <div>
                     <label className="block text-sm font-medium mb-1 text-slate-700">Jenis Transaksi</label>
                     <div className="flex bg-slate-100 p-1 rounded-lg h-[38px]">
-                      <button onClick={() => { setType('IN'); setValidationError(null); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG MASUK</button>
-                      <button onClick={() => { setType('OUT'); setValidationError(null); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG KELUAR</button>
+                      <button onClick={() => { setType('IN'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG MASUK</button>
+                      <button onClick={() => { setType('OUT'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG KELUAR</button>
                     </div>
                   </div>
                 </div>
