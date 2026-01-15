@@ -1,5 +1,6 @@
+
 import React, { useMemo } from 'react';
-import { InventoryItem } from '../types';
+import { InventoryItem, Transaction } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
@@ -8,6 +9,7 @@ import { DollarSign, Package, AlertTriangle, TrendingUp, ArrowRight } from 'luci
 
 interface DashboardProps {
   items: InventoryItem[];
+  transactions: Transaction[];
 }
 
 const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1'];
@@ -15,31 +17,18 @@ const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1'
 // Custom Tooltip Component for Bar Chart
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload; // This contains the full item data we passed
-    const item: InventoryItem = data.fullItem;
+    const data = payload[0].payload; 
+    const item: InventoryItem | undefined = data.fullItem;
     
-    // Logic to calculate breakdowns for tooltip
-    let breakdown = `${item.quantity} ${item.baseUnit}`;
-    if (item.alternativeUnits && item.alternativeUnits.length > 0) {
-        // Find largest unit
-        const largest = [...item.alternativeUnits].sort((a,b) => b.ratio - a.ratio)[0];
-        const majorQty = Math.floor(item.quantity / largest.ratio);
-        const minorQty = item.quantity % largest.ratio;
-        
-        if (majorQty > 0) {
-            breakdown = `${majorQty} ${largest.name}${minorQty > 0 ? ` + ${minorQty} ${item.baseUnit}` : ''}`;
-        }
-    }
-
     return (
       <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg">
         <p className="font-bold text-slate-800 mb-1">{label}</p>
         <p className="text-sm text-blue-600 font-medium">
-          Total: {item.quantity} {item.baseUnit}
+          Total Keluar: {data.quantity}
         </p>
-        {item.alternativeUnits && item.alternativeUnits.length > 0 && (
+        {item && (
            <p className="text-xs text-slate-500 mt-1 pt-1 border-t border-slate-100">
-             ≈ {breakdown}
+             Sisa Stok Saat Ini: {item.quantity} {item.baseUnit}
            </p>
         )}
       </div>
@@ -49,7 +38,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ items }) => {
+const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
   
   const stats = useMemo(() => {
     const totalItems = items.length;
@@ -73,16 +62,34 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
   }, [items]);
 
+  // Logic: Top 5 Items Most Frequently Appearing in Outbound Transactions (by Quantity)
   const topItemsData = useMemo(() => {
-    return [...items]
+    const counts: Record<string, number> = {};
+    // Map item names to their IDs to look up full item details later
+    const nameToIdMap: Record<string, string> = {}; 
+
+    transactions
+      .filter(t => t.type === 'OUT')
+      .forEach(t => {
+        t.items.forEach(item => {
+          counts[item.itemName] = (counts[item.itemName] || 0) + item.quantityInput;
+          nameToIdMap[item.itemName] = item.itemId;
+        });
+      });
+
+    return Object.entries(counts)
+      .map(([name, qty]) => {
+         // Try to find current stock info for the tooltip
+         const fullItem = items.find(i => i.name === name) || items.find(i => i.id === nameToIdMap[name]);
+         return {
+            name: name.length > 15 ? name.substring(0, 15) + '...' : name,
+            quantity: qty,
+            fullItem: fullItem
+         };
+      })
       .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5)
-      .map(item => ({
-        name: item.name.length > 15 ? item.name.substring(0, 15) + '...' : item.name,
-        quantity: item.quantity,
-        fullItem: item // Pass full item for custom tooltip processing
-      }));
-  }, [items]);
+      .slice(0, 5);
+  }, [transactions, items]);
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -93,7 +100,9 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 <div className="flex items-center justify-between">
                     <div>
                     <p className="text-sm font-medium text-slate-500">Total Value</p>
-                    <h3 className="text-2xl font-bold text-slate-900">${stats.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</h3>
+                    <h3 className="text-2xl font-bold text-slate-900">
+                        Rp {stats.totalValue.toLocaleString('id-ID')}
+                    </h3>
                     </div>
                     <div className="p-3 bg-blue-50 rounded-lg">
                     <DollarSign className="w-6 h-6 text-blue-600" />
@@ -143,17 +152,23 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 
                 {/* Top Stock Levels */}
                 <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Items by Quantity</h3>
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Barang Paling Banyak Keluar</h3>
                     <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={topItemsData} layout="vertical" margin={{ left: 20 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                            <XAxis type="number" />
-                            <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
-                            <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
-                            <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} />
-                        </BarChart>
-                        </ResponsiveContainer>
+                        {topItemsData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={topItemsData} layout="vertical" margin={{ left: 20 }}>
+                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                                <XAxis type="number" />
+                                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
+                                <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                                <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} />
+                            </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-slate-400 italic">
+                                Belum ada data transaksi keluar.
+                            </div>
+                        )}
                     </div>
                 </div>
 

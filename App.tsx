@@ -192,7 +192,7 @@ const App: React.FC = () => {
             </div>
         </header>
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
-            {currentView === AppView.DASHBOARD && <Dashboard items={items} />}
+            {currentView === AppView.DASHBOARD && <Dashboard items={items} transactions={transactions} />}
             {currentView === AppView.INVENTORY && (
                 <InventoryTable 
                   items={items} onAddItem={addItem} onUpdateItem={updateItem} onDeleteItem={deleteItem} 
