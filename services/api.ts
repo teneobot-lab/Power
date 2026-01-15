@@ -29,10 +29,13 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
       headers: { 'Accept': 'application/json' }
     });
 
-    // Handle HTML response (e.g., 404 Page, Nginx Error, or Proxy Fallback) gracefully
+    // Handle HTML response (e.g., 502 Bad Gateway from Vercel, 404 Nginx, etc)
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
-        console.warn(`⚠️ Backend unreachable at ${url} (Received HTML). Switching to Local Mode.`);
+        console.warn(`⚠️ Backend Issue at ${url}. Received HTML instead of JSON.`);
+        if (response.status === 502) {
+            console.error("❌ Error 502: Vercel tidak bisa menghubungi VPS. Cek Firewall (Port 3000) atau pastikan Server Backend menyala.");
+        }
         return null;
     }
 
@@ -67,6 +70,9 @@ export const syncBackendData = async (
 
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
+        if (response.status === 502) {
+            return { success: false, message: "Error 502: VPS Mati atau Port 3000 tertutup Firewall." };
+        }
         return { success: false, message: "Server API not found (HTML response)." };
     }
 
@@ -110,26 +116,34 @@ export const syncFullToSheets = async (
 export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string }> => {
   try {
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
-    // Jika GAS, kita tidak bisa cek root, jadi return true asumsi user benar
+    
+    // Jika GAS
     if (baseUrl.includes('script.google.com')) return { online: true, message: 'Google Apps Script URL detected' };
     
-    // Jika Mode Proxy ('/'), kita tidak bisa cek root '/' karena itu adalah halaman Frontend React
-    // Jadi kita cek endpoint API sebenarnya
+    // Jika Mode Proxy ('/'), kita cek endpoint root '/' yang seharusnya diteruskan ke VPS
+    // TAPI karena '/' di frontend adalah file index.html React, kita harus hit endpoint API spesifik
     const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/`; 
     
+    console.log("Checking connection to:", url);
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 detik timeout
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 detik timeout
 
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
 
+    // Cek 502 Bad Gateway khusus
+    if (response.status === 502) {
+        return { online: false, message: 'Error 502: VPS Port 3000 tertutup atau Server mati.' };
+    }
+
     if (response.ok) {
-        // Jika kita hit endpoint data untuk pengecekan
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
              return { online: true, message: 'Server Proxy API Online!' };
         }
-        return { online: true, message: 'Server Online & Siap!' };
+        // Jika backend root (/) merespon HTML "SmartStock Server Berjalan!", itu juga sukses
+        return { online: true, message: 'Server Online!' };
     } else {
         return { online: false, message: `Server Error: ${response.status}` };
     }
