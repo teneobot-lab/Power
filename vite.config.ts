@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': {
-          target: 'http://localhost:3000',
+          target: 'http://165.22.251.42:3000', // Proxy lokal diarahkan langsung ke VPS
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path 

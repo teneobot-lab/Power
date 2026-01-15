@@ -1,8 +1,10 @@
 
 import { InventoryItem, Supplier, User, AppSettings, TablePreferences } from './types';
 
-export const INITIAL_INVENTORY: InventoryItem[] = [];
+export const INITIAL_INVENTORY: InventoryItem[] = []; // Kosongkan initial state agar tidak bingung dengan data DB
+
 export const INITIAL_SUPPLIERS: Supplier[] = [];
+
 export const INITIAL_USERS: User[] = [
   {
     id: '1',
@@ -15,8 +17,8 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  // Biarkan kosong agar dideteksi sebagai backend lokal
-  viteGasUrl: window.location.origin.includes('localhost') ? 'http://localhost:3000' : window.location.origin, 
+  // Gunakan '/' agar request diarahkan ke Vercel Proxy (sesuai vercel.json)
+  viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: []

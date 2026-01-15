@@ -113,8 +113,9 @@ export const checkServerConnection = async (baseUrl: string): Promise<{ online: 
     // Jika GAS, kita tidak bisa cek root, jadi return true asumsi user benar
     if (baseUrl.includes('script.google.com')) return { online: true, message: 'Google Apps Script URL detected' };
     
-    // Untuk VPS, kita cek root endpoint '/' yang mengembalikan pesan HTML
-    const url = `${cleanBase}/`; 
+    // Jika Mode Proxy ('/'), kita tidak bisa cek root '/' karena itu adalah halaman Frontend React
+    // Jadi kita cek endpoint API sebenarnya
+    const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/`; 
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 detik timeout
@@ -123,6 +124,11 @@ export const checkServerConnection = async (baseUrl: string): Promise<{ online: 
     clearTimeout(timeoutId);
 
     if (response.ok) {
+        // Jika kita hit endpoint data untuk pengecekan
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+             return { online: true, message: 'Server Proxy API Online!' };
+        }
         return { online: true, message: 'Server Online & Siap!' };
     } else {
         return { online: false, message: `Server Error: ${response.status}` };
