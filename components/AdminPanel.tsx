@@ -167,9 +167,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                               {connectionStatus === 'success' ? '✅ ' : '❌ '} {connectionMsg}
                           </p>
                       )}
-                      <p className="text-[11px] text-slate-400 mt-2">
-                          Masukkan URL VPS Anda (contoh: <code>http://IP_ADDRESS:3000</code>). Pastikan port 3000 sudah dibuka di VPS.
-                      </p>
+                      <div className="mt-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                          <p className="text-[11px] text-slate-600">
+                              <span className="font-bold text-blue-700">TIPS KONEKSI:</span> Masukkan URL VPS Anda (contoh: <code>http://IP_VPS:3000</code>).
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-1">
+                              <AlertTriangle className="w-3 h-3 inline-block mr-1 text-amber-500" />
+                              Jika web ini dibuka via <b>HTTPS</b> (misal Vercel), browser mungkin memblokir koneksi ke VPS (HTTP) karena "Mixed Content".
+                              Solusinya: Gunakan browser setting "Insecure Content" atau pasang SSL di VPS Anda.
+                          </p>
+                      </div>
                     </div>
 
                     <div>
