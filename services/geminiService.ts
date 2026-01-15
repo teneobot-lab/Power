@@ -38,7 +38,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `
-        Act as a Warehouse Inventory Analyst. Analyze the following inventory data in JSON format:
+        Act as a Warehouse Inventory Analyst for POWER INVENTORY. Analyze the following inventory data in JSON format:
         ${inventoryData}
 
         Provide a concise executive summary (max 300 words) that covers:
@@ -58,7 +58,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
 };
 
 /**
- * Facilitates a chat session with the "SmartStock Agent".
+ * Facilitates a chat session with the "POWER Agent".
  */
 export const chatWithInventoryBot = async (
   query: string, 
@@ -71,7 +71,7 @@ export const chatWithInventoryBot = async (
       model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: `
-          You are "SmartStock Agent", a highly intelligent AI assistant for a warehouse manager.
+          You are "POWER Agent", a highly intelligent AI assistant for a warehouse manager at POWER INVENTORY.
 
           **YOUR CAPABILITIES:**
           1. **General Intelligence:** You can answer general questions, solve math, write emails, or chat casually.
@@ -83,7 +83,7 @@ export const chatWithInventoryBot = async (
           **GUIDELINES:**
           - Strictly use the provided JSON for stock counts or values.
           - Be professional, concise, and helpful.
-          - Format currency in USD.
+          - Format currency in IDR (Rupiah).
         `,
       },
     });

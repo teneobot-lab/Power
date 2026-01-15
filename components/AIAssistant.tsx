@@ -14,7 +14,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     {
       id: '1',
       role: 'model',
-      text: 'Hello! I am your SmartStock Agent. I can help you check inventory levels, write emails to suppliers, calculate business metrics, or answer general questions. How can I assist you today?',
+      text: 'Hello! I am your POWER Agent. I can help you check inventory levels, write emails to suppliers, calculate business metrics, or answer general questions. How can I assist you today?',
       timestamp: new Date()
     }
   ]);
@@ -44,7 +44,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     setInputValue('');
     setIsLoading(true);
 
-    // Using refactored service that relies on process.env.API_KEY
     const responseText = await chatWithInventoryBot(inputValue, items);
 
     const modelMsg: ChatMessage = {
@@ -61,7 +60,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
   const handleGenerateReport = async () => {
     if (isLoading) return;
     
-    // Add a ghost message for the user action
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
@@ -70,7 +68,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     }]);
     
     setIsLoading(true);
-    // Using refactored service that relies on process.env.API_KEY
     const report = await getInventoryInsights(items);
     
     setMessages(prev => [...prev, {
@@ -91,7 +88,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
             <Sparkles className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">Smart Agent</h3>
+            <h3 className="font-semibold text-slate-800">POWER Agent</h3>
             <p className="text-xs text-slate-500">Inventory Context & General AI</p>
           </div>
         </div>

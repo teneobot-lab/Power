@@ -16,7 +16,7 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  viteGasUrl: '/', 
+  viteGasUrl: 'http://165.22.251.42:3000', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: []
