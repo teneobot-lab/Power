@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { RejectItem, RejectLog, RejectItemDetail, UserRole, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History } from 'lucide-react';
+import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History, Copy, Edit3, Save } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 import * as XLSX from 'xlsx';
 
@@ -10,6 +10,8 @@ interface RejectManagerProps {
   rejectMasterData: RejectItem[];
   rejectLogs: RejectLog[];
   onProcessReject: (log: RejectLog) => void;
+  onUpdateRejectLog: (log: RejectLog) => void;
+  onDeleteRejectLog: (id: string) => void;
   onUpdateRejectMaster: (newList: RejectItem[]) => void;
   userRole: UserRole;
   columns: TableColumn[];
@@ -17,7 +19,7 @@ interface RejectManagerProps {
 }
 
 const RejectManager: React.FC<RejectManagerProps> = ({ 
-  rejectMasterData, rejectLogs, onProcessReject, onUpdateRejectMaster, userRole, columns, onToggleColumn 
+  rejectMasterData, rejectLogs, onProcessReject, onUpdateRejectLog, onDeleteRejectLog, onUpdateRejectMaster, userRole, columns, onToggleColumn 
 }) => {
   const canEdit = userRole === 'admin' || userRole === 'staff';
   
@@ -28,6 +30,13 @@ const RejectManager: React.FC<RejectManagerProps> = ({
   const [notes, setNotes] = useState('');
   const [cartItems, setCartItems] = useState<RejectItemDetail[]>([]);
   const [rejectReason, setRejectReason] = useState('Damaged');
+
+  // Edit Log State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingLog, setEditingLog] = useState<RejectLog | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editCartItems, setEditCartItems] = useState<RejectItemDetail[]>([]);
 
   // Master Data Tab State
   const [masterSearch, setMasterSearch] = useState('');
@@ -41,17 +50,30 @@ const RejectManager: React.FC<RejectManagerProps> = ({
   const [quantityInput, setQuantityInput] = useState<number | undefined>(undefined);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
   
+  // Item Selection State (Edit Modal)
+  const [editSearchQuery, setEditSearchQuery] = useState('');
+  const debouncedEditSearchQuery = useDebounce(editSearchQuery, 300);
+  const [editSelectedItem, setEditSelectedItem] = useState<RejectItem | null>(null);
+  const [editSelectedUnit, setEditSelectedUnit] = useState<string>('');
+  const [editConversionRatio, setEditConversionRatio] = useState<number>(1);
+  const [editQuantityInput, setEditQuantityInput] = useState<number | undefined>(undefined);
+  const [editRejectReason, setEditRejectReason] = useState('Damaged');
+  const [isEditAutocompleteOpen, setIsEditAutocompleteOpen] = useState(false);
+
   const searchRef = useRef<HTMLDivElement>(null);
+  const editSearchRef = useRef<HTMLDivElement>(null);
   const masterImportRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
+      if (editSearchRef.current && !editSearchRef.current.contains(event.target as Node)) setIsEditAutocompleteOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Filter Master Data for Main Form
   const filteredRejectMaster = useMemo(() => {
     if (!debouncedSearchQuery) return [];
     return rejectMasterData.filter(item => 
@@ -60,6 +82,16 @@ const RejectManager: React.FC<RejectManagerProps> = ({
     ).slice(0, 8); 
   }, [debouncedSearchQuery, rejectMasterData]);
 
+   // Filter Master Data for Edit Modal
+   const filteredEditRejectMaster = useMemo(() => {
+    if (!debouncedEditSearchQuery) return [];
+    return rejectMasterData.filter(item => 
+      item.name.toLowerCase().includes(debouncedEditSearchQuery.toLowerCase()) || 
+      item.sku.toLowerCase().includes(debouncedEditSearchQuery.toLowerCase())
+    ).slice(0, 8); 
+  }, [debouncedEditSearchQuery, rejectMasterData]);
+
+  // Handlers for Main Form
   const handleSelectItem = (item: RejectItem) => {
     setSelectedItem(item);
     setSearchQuery(item.name);
@@ -116,6 +148,90 @@ const RejectManager: React.FC<RejectManagerProps> = ({
     });
     setCartItems([]); 
     setNotes('');
+  };
+
+  // Handlers for Edit Modal
+  const openEditModal = (log: RejectLog) => {
+    setEditingLog(log);
+    setEditDate(log.date);
+    setEditNotes(log.notes);
+    setEditCartItems([...log.items]);
+    setIsEditModalOpen(true);
+    // Reset add item inputs in modal
+    setEditSearchQuery('');
+    setEditSelectedItem(null);
+    setEditQuantityInput(undefined);
+  };
+
+  const handleEditSelectItem = (item: RejectItem) => {
+    setEditSelectedItem(item);
+    setEditSearchQuery(item.name);
+    setEditSelectedUnit(item.baseUnit);
+    setEditConversionRatio(1);
+    setIsEditAutocompleteOpen(false);
+  };
+
+  const handleEditUnitChange = (unitName: string) => {
+    setEditSelectedUnit(unitName);
+    if (editSelectedItem?.baseUnit === unitName) {
+        setEditConversionRatio(1);
+    } else if (editSelectedItem?.unit2 === unitName) {
+        setEditConversionRatio(editSelectedItem.ratio2 || 1);
+    } else if (editSelectedItem?.unit3 === unitName) {
+        setEditConversionRatio(editSelectedItem.ratio3 || 1);
+    }
+  };
+
+  const handleAddToEditCart = () => {
+    if (!editSelectedItem || !editQuantityInput) return;
+    const requestedBase = editQuantityInput * editConversionRatio;
+    const newItem: RejectItemDetail = {
+      itemId: editSelectedItem.id, 
+      itemName: editSelectedItem.name, 
+      sku: editSelectedItem.sku, 
+      baseUnit: editSelectedItem.baseUnit, 
+      quantity: editQuantityInput, 
+      unit: editSelectedUnit, 
+      ratio: editConversionRatio, 
+      totalBaseQuantity: requestedBase, 
+      reason: editRejectReason,
+      unit2: editSelectedItem.unit2, ratio2: editSelectedItem.ratio2,
+      unit3: editSelectedItem.unit3, ratio3: editSelectedItem.ratio3
+    };
+    setEditCartItems([...editCartItems, newItem]);
+    setEditSelectedItem(null);
+    setEditSearchQuery('');
+    setEditQuantityInput(undefined);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingLog) return;
+    const updatedLog: RejectLog = {
+      ...editingLog,
+      date: editDate,
+      notes: editNotes,
+      items: editCartItems,
+    };
+    onUpdateRejectLog(updatedLog);
+    setIsEditModalOpen(false);
+  };
+
+  const handleDeleteLog = (id: string) => {
+      if (confirm("Hapus log reject ini secara permanen?")) {
+          onDeleteRejectLog(id);
+      }
+  };
+
+  const handleCopyToClipboard = (log: RejectLog) => {
+      const header = `Data Reject KKL (${log.date})`;
+      const body = log.items.map(item => `• ${item.itemName} - ${item.quantity} ${item.unit} (${item.reason})`).join('\n');
+      const textToCopy = `${header}\n${body}`;
+      
+      navigator.clipboard.writeText(textToCopy).then(() => {
+          alert("Data berhasil disalin ke clipboard!");
+      }).catch(err => {
+          console.error("Gagal menyalin: ", err);
+      });
   };
 
   const handleDownloadTemplate = () => {
@@ -177,7 +293,7 @@ const RejectManager: React.FC<RejectManagerProps> = ({
             <ClipboardCheck className="w-4 h-4" /> Entry Reject Log
           </button>
           <button onClick={() => setActiveTab('history')} className={`pb-3 px-2 text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'history' ? 'border-b-2 border-rose-600 text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}>
-            <History className="w-4 h-4" /> Riwayat Database
+            <History className="w-4 h-4" /> Riwayat Log
           </button>
           <button onClick={() => setActiveTab('master')} className={`pb-3 px-2 text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'master' ? 'border-b-2 border-rose-600 text-rose-600' : 'text-slate-500 hover:text-slate-700'}`}>
             <Database className="w-4 h-4" /> Reject Master Data
@@ -296,33 +412,38 @@ const RejectManager: React.FC<RejectManagerProps> = ({
       {activeTab === 'history' && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1 custom-scrollbar">
-                <table className="w-full text-left text-sm min-w-[900px]">
+                <table className="w-full text-left text-sm min-w-[600px]">
                     <thead className="sticky top-0 bg-slate-50 border-b z-10 shadow-sm">
                         <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                             <th className="px-6 py-4">Tanggal</th>
-                            <th className="px-6 py-4">SKU (Reject)</th>
-                            <th className="px-6 py-4">Nama Barang</th>
-                            <th className="px-6 py-4">Jumlah Reject</th>
-                            <th className="px-6 py-4">Alasan</th>
-                            <th className="px-6 py-4">Catatan Log</th>
+                            <th className="px-6 py-4">Rincian</th>
+                            <th className="px-6 py-4">Catatan</th>
+                            <th className="px-6 py-4 text-right">Aksi</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {sortedLogs.length > 0 ? sortedLogs.map(log => (
-                            <React.Fragment key={log.id}>
-                                {log.items.map((it, idx) => (
-                                    <tr key={`${log.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">{log.date}</td>
-                                        <td className="px-6 py-4"><span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded border">{it.sku}</span></td>
-                                        <td className="px-6 py-4 font-bold text-slate-800 uppercase text-xs truncate max-w-[200px]">{it.itemName}</td>
-                                        <td className="px-6 py-4"><span className="text-xs font-bold text-rose-600 whitespace-nowrap">{it.quantity} {it.unit}</span></td>
-                                        <td className="px-6 py-4"><span className="px-2 py-0.5 bg-rose-50 text-rose-600 rounded border border-rose-100 text-[10px] font-bold uppercase">{it.reason}</span></td>
-                                        <td className="px-6 py-4 text-xs italic text-slate-400 truncate max-w-[150px]">{log.notes || '-'}</td>
-                                    </tr>
-                                ))}
-                            </React.Fragment>
+                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-6 py-4 text-sm font-medium text-slate-600 whitespace-nowrap">{log.date}</td>
+                                <td className="px-6 py-4">
+                                    <div className="text-xs font-bold text-slate-800">{log.items.length} Barang</div>
+                                    <div className="text-[10px] text-slate-500 truncate max-w-[250px]">{log.items.map(i => i.itemName).join(', ')}</div>
+                                </td>
+                                <td className="px-6 py-4 text-xs italic text-slate-400 truncate max-w-[200px]">{log.notes || '-'}</td>
+                                <td className="px-6 py-4 text-right">
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => handleCopyToClipboard(log)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Copy to Clipboard">
+                                            <Copy className="w-4 h-4" />
+                                        </button>
+                                        <button onClick={() => openEditModal(log)} className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Edit / Detail">
+                                            <Edit3 className="w-4 h-4" />
+                                        </button>
+                                        {canEdit && <button onClick={() => handleDeleteLog(log.id)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Hapus"><Trash2 className="w-4 h-4" /></button>}
+                                    </div>
+                                </td>
+                            </tr>
                         )) : (
-                            <tr><td colSpan={6} className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest opacity-30">Database history is empty</td></tr>
+                            <tr><td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest opacity-30">Database history is empty</td></tr>
                         )}
                     </tbody>
                 </table>
@@ -383,6 +504,121 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                   </div>
               </div>
           </div>
+      )}
+
+      {/* EDIT MODAL */}
+      {isEditModalOpen && editingLog && (
+         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="px-6 py-4 border-b bg-slate-50 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Edit Reject Log</h3>
+                    <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+                </div>
+                <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Tanggal</label>
+                            <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full border border-slate-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-rose-500" disabled={!canEdit} />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Catatan</label>
+                            <input value={editNotes} onChange={e => setEditNotes(e.target.value)} className="w-full border border-slate-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-rose-500" disabled={!canEdit} />
+                        </div>
+                     </div>
+
+                     {/* Add New Item Section in Edit Modal */}
+                     {canEdit && (
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                           <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Tambah Barang ke Log Ini</h4>
+                           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                <div className="md:col-span-5 relative" ref={editSearchRef}>
+                                    <input 
+                                        type="text" 
+                                        value={editSearchQuery} 
+                                        onFocus={() => setIsEditAutocompleteOpen(true)} 
+                                        onChange={(e) => setEditSearchQuery(e.target.value)} 
+                                        placeholder="Cari Barang..." 
+                                        className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500" 
+                                    />
+                                    {isEditAutocompleteOpen && filteredEditRejectMaster.length > 0 && editSearchQuery && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-[60] max-h-48 overflow-auto">
+                                            {filteredEditRejectMaster.map(item => (
+                                                <button key={item.id} onClick={() => handleEditSelectItem(item)} className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-slate-50">
+                                                    <div className="text-sm font-bold text-slate-800">{item.name}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="md:col-span-2">
+                                     <select 
+                                        disabled={!editSelectedItem}
+                                        className="w-full px-2 py-2 border rounded-lg text-xs bg-white disabled:bg-slate-100"
+                                        value={editSelectedUnit}
+                                        onChange={e => handleEditUnitChange(e.target.value)}
+                                     >
+                                         {editSelectedItem && (
+                                            <>
+                                                <option value={editSelectedItem.baseUnit}>{editSelectedItem.baseUnit}</option>
+                                                {editSelectedItem.unit2 && <option value={editSelectedItem.unit2}>{editSelectedItem.unit2}</option>}
+                                                {editSelectedItem.unit3 && <option value={editSelectedItem.unit3}>{editSelectedItem.unit3}</option>}
+                                            </>
+                                         )}
+                                     </select>
+                                </div>
+                                <div className="md:col-span-2">
+                                     <input type="number" disabled={!editSelectedItem} value={editQuantityInput ?? ''} onChange={e => setEditQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))} placeholder="Qty" className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-rose-500" />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <input list="edit-reason-opts" value={editRejectReason} onChange={e => setEditRejectReason(e.target.value)} placeholder="Alasan" className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-rose-500" />
+                                    <datalist id="edit-reason-opts">{reasonSuggestions.map(r => <option key={r} value={r} />)}</datalist>
+                                </div>
+                                <div className="md:col-span-1">
+                                    <button onClick={handleAddToEditCart} disabled={!editSelectedItem || !editQuantityInput} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 disabled:bg-slate-200 transition-all"><Plus className="w-4 h-4 mx-auto" /></button>
+                                </div>
+                           </div>
+                        </div>
+                     )}
+
+                     <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Daftar Barang</label>
+                        {editCartItems.map((it, idx) => (
+                             <div key={idx} className="flex justify-between items-center text-xs bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-slate-800 uppercase truncate">{it.itemName}</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5">Reason: {it.reason}</div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {canEdit ? (
+                                        <>
+                                            <input 
+                                                type="number" 
+                                                className="w-16 border border-rose-200 rounded-lg text-center py-1.5 font-bold bg-rose-50 text-rose-700 outline-none focus:ring-2 focus:ring-rose-500" 
+                                                value={it.quantity} 
+                                                onChange={e => {
+                                                    const val = Number(e.target.value);
+                                                    const updated = [...editCartItems];
+                                                    updated[idx] = { ...updated[idx], quantity: val, totalBaseQuantity: val * (it.ratio || 1) };
+                                                    setEditCartItems(updated);
+                                                }} 
+                                            />
+                                            <span className="font-bold text-slate-500">{it.unit}</span>
+                                            <button onClick={() => setEditCartItems(editCartItems.filter((_, i) => i !== idx))} className="p-1.5 bg-red-100 text-red-600 rounded hover:bg-red-200 ml-2"><Trash2 className="w-3 h-3" /></button>
+                                        </>
+                                    ) : (
+                                        <span className="font-bold px-3 py-1.5 bg-slate-100 rounded-lg">{it.quantity} {it.unit}</span>
+                                    )}
+                                </div>
+                             </div>
+                        ))}
+                     </div>
+                </div>
+                <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
+                    <button onClick={() => setIsEditModalOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all">Tutup</button>
+                    {canEdit && <button onClick={handleSaveEdit} className="px-5 py-2.5 bg-rose-600 text-white font-bold hover:bg-rose-700 rounded-xl transition-all shadow-lg shadow-rose-200 flex items-center gap-2"><Save className="w-4 h-4" /> Simpan Perubahan</button>}
+                </div>
+            </div>
+         </div>
       )}
     </div>
   );

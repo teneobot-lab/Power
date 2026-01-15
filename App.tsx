@@ -207,7 +207,11 @@ const App: React.FC = () => {
             )}
             {currentView === AppView.REJECT && (
                 <RejectManager 
-                    rejectMasterData={rejectItems} rejectLogs={rejectLogs} onProcessReject={(log) => setRejectLogs(prev => [log, ...prev])} onUpdateRejectMaster={setRejectItems}
+                    rejectMasterData={rejectItems} rejectLogs={rejectLogs} 
+                    onProcessReject={(log) => setRejectLogs(prev => [log, ...prev])} 
+                    onUpdateRejectLog={(updatedLog) => setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l))}
+                    onDeleteRejectLog={(id) => setRejectLogs(prev => prev.filter(l => l.id !== id))}
+                    onUpdateRejectMaster={setRejectItems}
                     userRole={currentUser.role} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} 
                 />
             )}
