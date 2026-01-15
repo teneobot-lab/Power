@@ -1,6 +1,7 @@
+
 export interface UnitDefinition {
   name: string;
-  ratio: number; // Conversion ratio relative to base unit (e.g., 1 Box = 12 Pcs, ratio = 12)
+  ratio: number; 
 }
 
 export interface InventoryItem {
@@ -8,12 +9,26 @@ export interface InventoryItem {
   name: string;
   sku: string;
   category: string;
-  quantity: number; // Always stored in Base Unit
-  baseUnit: string; // e.g., "Pcs"
-  alternativeUnits?: UnitDefinition[]; // e.g., [{name: "Box", ratio: 12}]
-  minLevel: number; // Reorder point
-  unitPrice: number;
+  quantity: number; 
+  baseUnit: string; 
+  alternativeUnits?: UnitDefinition[]; 
+  minLevel: number; 
+  unitPrice: number; 
   location: string;
+  lastUpdated: string;
+  status?: 'active' | 'inactive'; 
+}
+
+// Independent Master Data for Rejects
+export interface RejectItem {
+  id: string;
+  name: string;
+  sku: string;
+  baseUnit: string;
+  unit2?: string;
+  ratio2?: number;
+  unit3?: string;
+  ratio3?: number;
   lastUpdated: string;
 }
 
@@ -40,18 +55,18 @@ export interface User {
 export interface MediaItem {
   id: string;
   type: 'youtube' | 'tiktok';
-  url: string;       // Original URL
-  embedId: string;   // Extracted ID for embedding
+  url: string;
+  embedId: string;
   title: string;
   addedAt: string;
 }
 
 export interface AppSettings {
-  geminiApiKey: string;
   viteGasUrl: string;
-  youtubeApiKey: string; // New field for YouTube Data API
-  tiktokConfig: string;  // New field for TikTok Configuration/Session
+  youtubeApiKey: string;
+  tiktokConfig: string;
   mediaItems: MediaItem[];
+  lastSheetSync?: string;
 }
 
 export interface TableColumn {
@@ -64,19 +79,16 @@ export interface TablePreferences {
   inventory: TableColumn[];
   history: TableColumn[];
   suppliers: TableColumn[];
-}
-
-export interface StockAlert {
-  id: string;
-  itemId: string;
-  message: string;
-  severity: 'low' | 'critical' | 'info';
+  transactions: TableColumn[];
+  rejects: TableColumn[];
+  rejectMaster: TableColumn[];
 }
 
 export enum AppView {
   DASHBOARD = 'DASHBOARD',
   INVENTORY = 'INVENTORY',
   TRANSACTIONS = 'TRANSACTIONS',
+  REJECT = 'REJECT',
   SUPPLIERS = 'SUPPLIERS',
   ADMIN = 'ADMIN', 
   HISTORY = 'HISTORY',
@@ -94,11 +106,11 @@ export type TransactionType = 'IN' | 'OUT';
 
 export interface TransactionItemDetail {
   itemId: string;
-  itemName: string; // Snapshot name
+  itemName: string; 
   quantityInput: number;
   selectedUnit: string;
   conversionRatio: number;
-  totalBaseQuantity: number; // quantityInput * conversionRatio
+  totalBaseQuantity: number; 
 }
 
 export interface Transaction {
@@ -108,14 +120,36 @@ export interface Transaction {
   items: TransactionItemDetail[];
   notes?: string;
   timestamp: string;
-  // New Inbound Fields
-  supplierName?: string; // Changed from supplierId to supplierName for text input
-  poNumber?: string; // Purchase Order
-  riNumber?: string; // Receiving Inspection / Receipt Number
-  photos?: string[]; // Array of Base64 strings
+  supplierName?: string; 
+  poNumber?: string; 
+  riNumber?: string; 
+  photos?: string[]; 
 }
 
-// Toast Types
+export interface RejectItemDetail {
+  itemId: string;
+  itemName: string;
+  sku: string;
+  baseUnit: string;
+  quantity: number; 
+  unit: string; 
+  ratio: number; 
+  totalBaseQuantity: number;
+  reason: string;
+  unit2?: string;
+  ratio2?: number;
+  unit3?: string;
+  ratio3?: number;
+}
+
+export interface RejectLog {
+  id: string;
+  date: string;
+  items: RejectItemDetail[];
+  notes: string;
+  timestamp: string;
+}
+
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 export interface ToastMessage {

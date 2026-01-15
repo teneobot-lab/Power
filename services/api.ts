@@ -1,6 +1,6 @@
+
 import { InventoryItem, Transaction, Supplier, User, AppSettings } from "../types";
 
-// Standard JSON response wrapper
 interface ApiResponse<T> {
   status: 'success' | 'error';
   data?: T;
@@ -17,51 +17,28 @@ interface FullState {
 
 export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
   try {
-    const isGas = baseUrl.includes('script.google.com');
-    
-    // Logic URL construction:
-    // Ensure no double slashes and correct prefix
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
-    // Correctly handle GAS vs Standard API
-    const url = isGas ? baseUrl : `${cleanBase}/api/data`;
-
-    console.log(`📡 Fetching data from: ${url}`);
+    const url = baseUrl.includes('script.google.com') ? baseUrl : `${cleanBase}/api/data`;
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
+      headers: { 'Accept': 'application/json' }
     });
-    
-    // Check if Nginx returned the HTML 404 page instead of JSON
+
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
-        console.error(`❌ Server Error at ${url}: Received HTML instead of JSON.`);
-        throw new Error("Server Error: Received HTML instead of JSON. The API endpoint URL might be incorrect or the server is returning a default page.");
-    }
-
-    if (response.status === 404) {
-         console.error(`❌ 404 Not Found at: ${url}`);
-         throw new Error(`Endpoint not found (404) at: ${url}. Check server routes or ensure the backend server is running.`);
+        throw new Error("Server Error: Received HTML instead of JSON.");
     }
 
     if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`HTTP Error: ${response.status}`);
     }
 
     const json: ApiResponse<FullState> = await response.json();
-    
-    if (json.status === 'success' && json.data) {
-      console.log("✅ Backend connection successful");
-      return json.data;
-    } else {
-      console.error("❌ Backend Error (Logic):", json.message);
-      return null;
-    }
-  } catch (error) {
-    console.error("❌ Network/Connection Error:", error);
-    throw error; // Re-throw to let UI handle it
+    return (json.status === 'success' && json.data) ? json.data : null;
+  } catch (error: any) {
+    console.error("❌ Network Request Failed:", error);
+    throw error;
   }
 };
 
@@ -75,43 +52,42 @@ export const syncBackendData = async (
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
 
-    console.log(`💾 Syncing ${type} to: ${url}`);
-
-    const payload = JSON.stringify({ type, data });
-    
     const response = await fetch(url, {
       method: 'POST',
-      body: payload,
-      headers: {
-        'Content-Type': isGas ? 'text/plain' : 'application/json' 
-      }
+      body: JSON.stringify({ type, data }),
+      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
     });
 
-    if (response.status === 404) {
-        return { success: false, message: `Sync endpoint not found (404) at ${url}` };
-    }
-
-    if (!response.ok) {
-        const errorText = await response.text().catch(() => response.statusText);
-        console.error(`Sync HTTP Error: ${response.status}`, errorText);
-        return { success: false, message: `Server error: ${response.status}` };
-    }
-
+    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
     const json = await response.json();
-    return { 
-        success: json.status === 'success', 
-        message: json.message || 'Unknown server response'
-    };
+    return { success: json.status === 'success', message: json.message };
   } catch (error: any) {
-    console.error(`Error syncing ${type}:`, error);
-    
-    if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
-         if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
-             return { success: false, message: 'BLOCKED: Browser blocked HTTP. Use "/" in Admin Panel.' };
-         }
-         return { success: false, message: 'Connection refused. Check Backend Server.' };
-    }
-    
+    return { success: false, message: error.message || 'Network error' };
+  }
+};
+
+/**
+ * Sends all application data to the backend for a full spreadsheet refresh.
+ */
+export const syncFullToSheets = async (
+  baseUrl: string,
+  fullData: FullState
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const isGas = baseUrl.includes('script.google.com');
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'full_sync', data: fullData }),
+      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
+    });
+
+    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
+    const json = await response.json();
+    return { success: json.status === 'success', message: json.message };
+  } catch (error: any) {
     return { success: false, message: error.message || 'Network error' };
   }
 };

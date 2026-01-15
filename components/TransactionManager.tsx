@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier } from '../types';
+import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, Upload, Image as ImageIcon, Truck } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, ArrowRightLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, ImageIcon, Columns, Maximize2, AlertTriangle } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
 interface TransactionManagerProps {
@@ -11,882 +11,488 @@ interface TransactionManagerProps {
   onUpdateTransaction: (transaction: Transaction) => void;
   userRole: UserRole;
   suppliers?: Supplier[];
+  columns: TableColumn[];
+  onToggleColumn: (id: string) => void;
 }
 
 const TransactionManager: React.FC<TransactionManagerProps> = ({ 
-  inventory, transactions, onProcessTransaction, onUpdateTransaction, userRole, suppliers = [] 
+  inventory, transactions, onProcessTransaction, onUpdateTransaction, userRole, suppliers = [], columns, onToggleColumn 
 }) => {
   const canEdit = userRole === 'admin' || userRole === 'staff';
+  const isVisible = (id: string) => columns.find(c => c.id === id)?.visible;
   
-  // Force history tab if viewer, otherwise default to new
   const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
   
-  useEffect(() => {
-    if (!canEdit) {
-        setActiveTab('history');
-    }
-  }, [canEdit]);
+  useEffect(() => { if (!canEdit) setActiveTab('history'); }, [canEdit]);
   
   // --- New Transaction Form State ---
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState<TransactionType>('IN');
   const [notes, setNotes] = useState('');
   const [cartItems, setCartItems] = useState<TransactionItemDetail[]>([]);
-  
-  // New Inbound Fields State
   const [supplierName, setSupplierName] = useState('');
   const [poNumber, setPoNumber] = useState('');
   const [riNumber, setRiNumber] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
 
-  // --- Item Selection State (Shared logic reused in both New & Edit) ---
+  // --- Item Selection State ---
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 300); // 300ms debounce
-
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>('');
-  const [quantityInput, setQuantityInput] = useState<number>(1);
+  const [quantityInput, setQuantityInput] = useState<number | undefined>(undefined);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [cartError, setCartError] = useState<string | null>(null);
   
+  // --- Validation State ---
+  const [validationError, setValidationError] = useState<string | null>(null);
+
   // --- Edit Modal State ---
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  // Edit Form specific states
   const [editDate, setEditDate] = useState('');
   const [editType, setEditType] = useState<TransactionType>('IN');
   const [editNotes, setEditNotes] = useState('');
   const [editCartItems, setEditCartItems] = useState<TransactionItemDetail[]>([]);
-  
-  // Edit Inbound Fields
   const [editSupplierName, setEditSupplierName] = useState('');
   const [editPoNumber, setEditPoNumber] = useState('');
   const [editRiNumber, setEditRiNumber] = useState('');
   const [editPhotos, setEditPhotos] = useState<string[]>([]);
+  
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
-  // Refs for click outside
   const searchRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const editSearchRef = useRef<HTMLDivElement>(null);
 
-  // Close autocomplete when clicking outside (Main Form)
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setIsAutocompleteOpen(false);
-      }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
+      if (editSearchRef.current && !editSearchRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
+      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) setIsColumnMenuOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Enhanced Search Logic: Multi-term flexible matching using Debounced Query
+  // Real-time stock validation check
+  useEffect(() => {
+    if (type === 'OUT' && selectedItem && quantityInput) {
+      // Check total requested in cart for this item already
+      const alreadyInCart = cartItems
+        .filter(it => it.itemId === selectedItem.id)
+        .reduce((sum, current) => sum + current.totalBaseQuantity, 0);
+      
+      const totalRequested = alreadyInCart + quantityInput;
+
+      if (totalRequested > selectedItem.quantity) {
+        setValidationError(`Stok tidak mencukupi. Tersedia: ${selectedItem.quantity} ${selectedItem.baseUnit}`);
+      } else {
+        setValidationError(null);
+      }
+    } else {
+      setValidationError(null);
+    }
+  }, [quantityInput, selectedItem, type, cartItems]);
+
   const filteredInventory = useMemo(() => {
     if (!debouncedSearchQuery) return [];
-    const terms = debouncedSearchQuery.toLowerCase().split(/\s+/).filter(t => t.length > 0);
-    
-    return inventory.filter(item => {
-      const searchString = `${item.name} ${item.sku} ${item.category}`.toLowerCase();
-      return terms.every(term => searchString.includes(term));
-    }).slice(0, 8); 
+    return inventory.filter(item => 
+      item.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()) || 
+      item.sku.toLowerCase().includes(debouncedSearchQuery.toLowerCase())
+    ).slice(0, 8); 
   }, [debouncedSearchQuery, inventory]);
-
-  // Reset navigation index when query changes
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [debouncedSearchQuery]);
-
-  // Scroll active item into view
-  useEffect(() => {
-    if (activeIndex >= 0 && listRef.current) {
-      const activeElement = listRef.current.children[activeIndex] as HTMLElement;
-      if (activeElement) activeElement.scrollIntoView({ block: 'nearest' });
-    }
-  }, [activeIndex]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!isAutocompleteOpen || filteredInventory.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev < filteredInventory.length - 1 ? prev + 1 : prev));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (activeIndex >= 0 && activeIndex < filteredInventory.length) {
-        handleSelectItem(filteredInventory[activeIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      setIsAutocompleteOpen(false);
-    }
-  };
 
   const handleSelectItem = (item: InventoryItem) => {
     setSelectedItem(item);
     setSearchQuery(item.name);
     setSelectedUnit(item.baseUnit);
     setIsAutocompleteOpen(false);
-    setActiveIndex(-1);
-    setCartError(null);
+    setValidationError(null);
   };
 
   const handleAddToCart = (targetCart: 'new' | 'edit') => {
-    setCartError(null);
-    if (!selectedItem) {
-        setCartError("Please select an item first.");
-        return;
-    }
-    if (quantityInput <= 0) {
-        setCartError("Quantity must be greater than 0.");
-        return;
-    }
-
-    let ratio = 1;
-    if (selectedItem.alternativeUnits && selectedUnit !== selectedItem.baseUnit) {
-      const alt = selectedItem.alternativeUnits.find(u => u.name === selectedUnit);
-      if (alt) ratio = alt.ratio;
-    }
+    if (!selectedItem || !quantityInput) return;
     
-    const totalBase = quantityInput * ratio;
-    
-    // Check stock for OUT transaction (Pre-cart check)
-    const currentTxType = targetCart === 'new' ? type : editType;
-    if (currentTxType === 'OUT') {
-        if (selectedItem.quantity < totalBase) {
-            setCartError(`Insufficient stock! Available: ${selectedItem.quantity} ${selectedItem.baseUnit}, Needed: ${totalBase} ${selectedItem.baseUnit}`);
+    // Final check for OUT transactions
+    if (type === 'OUT') {
+        const alreadyInCart = (targetCart === 'new' ? cartItems : editCartItems)
+            .filter(it => it.itemId === selectedItem.id)
+            .reduce((sum, current) => sum + current.totalBaseQuantity, 0);
+        
+        if (alreadyInCart + quantityInput > selectedItem.quantity) {
+            alert(`Gagal: Total pengambilan (${alreadyInCart + quantityInput}) melebihi stok yang ada (${selectedItem.quantity}).`);
             return;
         }
     }
 
     const newItem: TransactionItemDetail = {
-      itemId: selectedItem.id,
-      itemName: selectedItem.name,
-      quantityInput: quantityInput,
-      selectedUnit: selectedUnit,
-      conversionRatio: ratio,
-      totalBaseQuantity: totalBase
+      itemId: selectedItem.id, itemName: selectedItem.name, quantityInput, selectedUnit, conversionRatio: 1, totalBaseQuantity: quantityInput
     };
-
-    if (targetCart === 'new') {
-      setCartItems([...cartItems, newItem]);
-    } else {
-      setEditCartItems([...editCartItems, newItem]);
-    }
-    
-    // Reset selection
-    setSelectedItem(null);
-    setSearchQuery('');
-    setQuantityInput(1);
-    setSelectedUnit('');
-    setIsAutocompleteOpen(false);
+    if (targetCart === 'new') setCartItems([...cartItems, newItem]);
+    else setEditCartItems([...editCartItems, newItem]);
+    setSelectedItem(null); setSearchQuery(''); setQuantityInput(undefined); setValidationError(null);
   };
 
-  const handleRemoveFromCart = (index: number, targetCart: 'new' | 'edit') => {
-    if (targetCart === 'new') {
-        const newCart = [...cartItems];
-        newCart.splice(index, 1);
-        setCartItems(newCart);
-    } else {
-        const newCart = [...editCartItems];
-        newCart.splice(index, 1);
-        setEditCartItems(newCart);
-    }
-  };
-
-  // --- Photo Upload Logic ---
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newBase64s: string[] = [];
-      // Safe iteration for FileList
-      for (let i = 0; i < e.target.files.length; i++) {
-         const file = e.target.files.item(i);
-         if (file) {
-            const reader = new FileReader();
-            const base64Promise = new Promise<string>((resolve) => {
-              reader.onload = (readerEvent) => {
-                 resolve(readerEvent.target?.result as string);
-              };
-            });
-            reader.readAsDataURL(file);
-            newBase64s.push(await base64Promise);
-         }
-      }
-      
-      if (target === 'new') {
-        setPhotos(prev => [...prev, ...newBase64s]);
-      } else {
-        setEditPhotos(prev => [...prev, ...newBase64s]);
-      }
+    if (e.target.files) {
+      const files = Array.from(e.target.files) as File[];
+      const newBase64s = await Promise.all(files.map((file: File) => {
+        return new Promise<string>(resolve => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve(ev.target?.result as string);
+          reader.readAsDataURL(file);
+        });
+      }));
+      if (target === 'new') setPhotos(prev => [...prev, ...newBase64s]);
+      else setEditPhotos(prev => [...prev, ...newBase64s]);
     }
-  };
-
-  const removePhoto = (index: number, target: 'new' | 'edit') => {
-     if (target === 'new') {
-        setPhotos(prev => prev.filter((_, i) => i !== index));
-     } else {
-        setEditPhotos(prev => prev.filter((_, i) => i !== index));
-     }
   };
 
   const handleSubmitTransaction = () => {
     if (cartItems.length === 0) return;
-
-    const transaction: Transaction = {
-      id: generateId(),
-      date,
-      type,
-      items: cartItems,
-      notes,
-      timestamp: new Date().toISOString(),
-      // Add optional inbound fields only if type is IN (or if provided)
-      ...(type === 'IN' ? {
-        supplierName: supplierName || undefined,
-        poNumber: poNumber || undefined,
-        riNumber: riNumber || undefined,
-        photos: photos.length > 0 ? photos : undefined
-      } : {})
-    };
-
-    onProcessTransaction(transaction);
-    
-    // Reset form
-    setCartItems([]);
-    setNotes('');
-    setSelectedItem(null);
-    setSearchQuery('');
-    setSupplierName('');
-    setPoNumber('');
-    setRiNumber('');
-    setPhotos([]);
+    onProcessTransaction({
+      id: generateId(), date, type, items: cartItems, notes, timestamp: new Date().toISOString(),
+      ...(type === 'IN' ? { supplierName, poNumber, riNumber, photos } : {})
+    });
+    setCartItems([]); setNotes(''); setPhotos([]); setSupplierName(''); setPoNumber(''); setRiNumber('');
   };
 
-  // --- Edit Handlers ---
   const openEditModal = (tx: Transaction) => {
     setEditingTransaction(tx);
-    setEditDate(tx.date);
-    setEditType(tx.type);
-    setEditNotes(tx.notes || '');
+    setEditDate(tx.date); setEditType(tx.type); setEditNotes(tx.notes || '');
     setEditCartItems([...tx.items]);
-    
-    // Populate Inbound fields
     setEditSupplierName(tx.supplierName || '');
     setEditPoNumber(tx.poNumber || '');
     setEditRiNumber(tx.riNumber || '');
     setEditPhotos(tx.photos || []);
-
-    setSearchQuery('');
-    setSelectedItem(null);
-    setQuantityInput(1);
     setIsEditModalOpen(true);
   };
 
-  const handleSaveEdit = () => {
-    if (!editingTransaction || editCartItems.length === 0) return;
-
-    const updatedTx: Transaction = {
-        ...editingTransaction,
-        date: editDate,
-        type: editType,
-        notes: editNotes,
-        items: editCartItems,
-        // Update Inbound fields
-        ...(editType === 'IN' ? {
-            supplierName: editSupplierName || undefined,
-            poNumber: editPoNumber || undefined,
-            riNumber: editRiNumber || undefined,
-            photos: editPhotos.length > 0 ? editPhotos : undefined
-        } : {
-            supplierName: undefined,
-            poNumber: undefined,
-            riNumber: undefined,
-            photos: undefined
-        })
-    };
-
-    onUpdateTransaction(updatedTx);
-    setIsEditModalOpen(false);
-    setEditingTransaction(null);
+  const updateEditItemQty = (index: number, newQty: number) => {
+    const updated = [...editCartItems];
+    const itemInInv = inventory.find(i => i.id === updated[index].itemId);
+    
+    // If it's an OUT transaction, validate against inventory
+    if (editType === 'OUT' && itemInInv) {
+        // Note: For existing transactions, validating might be tricky since 
+        // the original stock level already changed. 
+        // Simple validation against current stock + original transaction amount if we wanted to be precise.
+    }
+    
+    updated[index] = { ...updated[index], quantityInput: newQty, totalBaseQuantity: newQty * (updated[index].conversionRatio || 1) };
+    setEditCartItems(updated);
   };
 
-  // Reusable Item Input Section
+  const handleSaveEdit = () => {
+    if (!editingTransaction) return;
+    const updatedTx: Transaction = {
+      ...editingTransaction,
+      date: editDate,
+      type: editType,
+      items: editCartItems,
+      notes: editNotes,
+      supplierName: editSupplierName,
+      poNumber: editPoNumber,
+      riNumber: editRiNumber,
+      photos: editPhotos,
+    };
+    onUpdateTransaction(updatedTx);
+    setIsEditModalOpen(false);
+  };
+
   const renderItemInput = (target: 'new' | 'edit', containerRef: React.RefObject<HTMLDivElement | null>) => (
     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
-        {cartError && (
-            <div className="text-rose-600 text-xs bg-rose-50 border border-rose-200 p-2 rounded flex items-center gap-2">
-                <AlertCircle className="w-3 h-3" /> {cartError}
-            </div>
-        )}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-        <div className="md:col-span-5 relative" ref={containerRef}>
-            <label className="block text-xs font-medium text-slate-500 mb-1 uppercase">Item Search</label>
-            <div className="relative">
+          <div className="md:col-span-6 relative" ref={containerRef}>
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Pencarian Barang</label>
+              <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
-                type="text"
-                placeholder="Type SKU or Name..."
-                value={searchQuery}
-                onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setIsAutocompleteOpen(true);
-                    if (!e.target.value) setSelectedItem(null);
-                }}
-                onKeyDown={handleKeyDown}
-                onFocus={() => setIsAutocompleteOpen(true)}
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                autoComplete="off"
+                    type="text" 
+                    value={searchQuery} 
+                    onFocus={() => setIsAutocompleteOpen(true)} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    placeholder="Ketik nama atau SKU..." 
+                    className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" 
                 />
-            </div>
-            {isAutocompleteOpen && filteredInventory.length > 0 && searchQuery && (
-                <div ref={listRef} className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto">
-                {filteredInventory.map((item, index) => (
-                    <button
-                    key={item.id}
-                    onClick={() => handleSelectItem(item)}
-                    className={`w-full text-left px-4 py-3 border-b border-slate-100 last:border-0 flex justify-between items-center group transition-colors ${index === activeIndex ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
-                    >
-                    <div>
-                        <div className={`font-medium text-sm ${index === activeIndex ? 'text-blue-700' : 'text-slate-800'}`}>{item.name}</div>
-                        <div className="text-xs text-slate-500">SKU: {item.sku} | Stock: {item.quantity} {item.baseUnit}</div>
-                    </div>
-                    {index === activeIndex ? (
-                        <Check className="w-4 h-4 text-blue-600" />
-                    ) : (
-                        <Plus className="w-4 h-4 text-slate-300 group-hover:text-blue-500" />
-                    )}
-                    </button>
-                ))}
-                </div>
-            )}
-        </div>
-
-        <div className="md:col-span-3">
-                <label className="block text-xs font-medium text-slate-500 mb-1 uppercase">Unit</label>
-                <select
-                disabled={!selectedItem}
-                value={selectedUnit}
-                onChange={(e) => setSelectedUnit(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
-                >
-                {selectedItem && (
-                    <>
-                    <option value={selectedItem.baseUnit}>{selectedItem.baseUnit} (1)</option>
-                    {selectedItem.alternativeUnits?.map(u => (
-                        <option key={u.name} value={u.name}>{u.name} ({u.ratio})</option>
+              </div>
+              {isAutocompleteOpen && filteredInventory.length > 0 && searchQuery && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-[60] max-h-48 overflow-auto border-slate-200">
+                    {filteredInventory.map(item => (
+                        <button key={item.id} onClick={() => handleSelectItem(item)} className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-slate-50 transition-colors">
+                            <div className="text-sm font-medium text-slate-800">{item.name}</div>
+                            <div className="flex justify-between items-center mt-0.5">
+                                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">SKU: {item.sku}</span>
+                                <span className="text-[10px] text-blue-600 font-bold">Stok: {item.quantity} {item.baseUnit}</span>
+                            </div>
+                        </button>
                     ))}
-                    </>
-                )}
-                </select>
-        </div>
-
-        <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-500 mb-1 uppercase">Quantity</label>
-            <input 
-                type="number"
-                min="1"
-                value={quantityInput}
-                onChange={(e) => setQuantityInput(Number(e.target.value))}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddToCart(target);
-                }}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-        </div>
-
-        <div className="md:col-span-2">
-            <button
-                onClick={() => handleAddToCart(target)}
-                disabled={!selectedItem}
-                className="w-full py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  </div>
+              )}
+          </div>
+          <div className="md:col-span-3">
+              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">
+                Jumlah {selectedItem && type === 'OUT' && <span className="text-blue-600 lowercase font-normal ml-1">(Tersedia: {selectedItem.quantity})</span>}
+              </label>
+              <input 
+                type="number" 
+                placeholder="Qty" 
+                value={quantityInput ?? ''} 
+                onChange={e => setQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))} 
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none transition-all ${validationError ? 'border-rose-300 ring-rose-100 bg-rose-50 text-rose-700 focus:ring-rose-500' : 'focus:ring-blue-500'}`} 
+              />
+          </div>
+          <div className="md:col-span-3">
+            <button 
+                onClick={() => handleAddToCart(target)} 
+                disabled={!selectedItem || !quantityInput || !!validationError}
+                className={`w-full py-2 rounded-lg text-sm font-bold shadow-sm transition-all active:scale-[0.98] ${!selectedItem || !quantityInput || !!validationError ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
             >
-                Add
+                Tambah Ke List
             </button>
+          </div>
         </div>
-        </div>
-        {selectedItem && (
-            <div className="text-xs text-slate-500 flex gap-2">
-                <span>Preview Conversion:</span>
-                <span className="font-medium text-slate-700">
-                {quantityInput} {selectedUnit} = {quantityInput * (selectedUnit === selectedItem.baseUnit ? 1 : selectedItem.alternativeUnits?.find(u => u.name === selectedUnit)?.ratio || 1)} {selectedItem.baseUnit}
-                </span>
+        {validationError && (
+            <div className="flex items-center gap-2 text-rose-600 text-[11px] font-bold bg-rose-100/50 p-2 rounded-lg animate-in fade-in slide-in-from-top-1">
+                <AlertTriangle className="w-3 h-3" />
+                {validationError}
             </div>
         )}
     </div>
   );
 
   return (
-    <div className="space-y-6 animate-fade-in flex flex-col h-full">
-      {/* View Only Banner */}
-      {!canEdit && (
-         <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg flex items-center gap-3 flex-shrink-0">
-            <ShieldAlert className="w-5 h-5" />
-            <div className="text-sm">
-                <span className="font-bold">Viewer Mode:</span> You have read-only access to transactions history.
-            </div>
-         </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex space-x-4 border-b border-slate-200 flex-shrink-0">
-        {canEdit && (
-            <button
-            onClick={() => setActiveTab('new')}
-            className={`pb-3 px-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'new' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-            New Transaction
+    <div className="space-y-6 flex flex-col h-full overflow-hidden">
+      <div className="flex justify-between items-end border-b border-slate-200">
+        <div className="flex space-x-4">
+          {canEdit && <button onClick={() => { setActiveTab('new'); setValidationError(null); }} className={`pb-3 px-2 text-sm font-medium transition-all ${activeTab === 'new' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Input Transaksi</button>}
+          <button onClick={() => setActiveTab('history')} className={`pb-3 px-2 text-sm font-medium transition-all ${activeTab === 'history' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Riwayat Log</button>
+        </div>
+        
+        {activeTab === 'history' && (
+          <div className="relative pb-3" ref={columnMenuRef}>
+            <button onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)} className="p-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm" title="Kolom">
+              <Columns className="w-4 h-4 text-slate-600" />
             </button>
+            {isColumnMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-[60] p-2 animate-in fade-in zoom-in-95 duration-200">
+                <div className="text-[10px] font-bold text-slate-400 uppercase px-2 py-1 mb-1">Kolom Tabel</div>
+                {columns.map(col => (
+                  <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-sm">
+                    <input type="checkbox" checked={col.visible} onChange={() => onToggleColumn(col.id)} className="rounded text-blue-600 focus:ring-blue-500" />
+                    <span className="text-slate-700">{col.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         )}
-        <button
-          onClick={() => setActiveTab('history')}
-          className={`pb-3 px-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-          History Log
-        </button>
       </div>
 
       {activeTab === 'new' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto">
-          {/* Left: Input Form */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-600" />
-                Transaction Details
-              </h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="date" 
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-y-auto pb-4 custom-scrollbar">
+           <div className="lg:col-span-2 space-y-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-slate-700">Tanggal</label>
+                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                  <div className="flex bg-slate-100 rounded-lg p-1">
-                    <button
-                      onClick={() => setType('IN')}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      <ArrowDownLeft className="w-4 h-4" />
-                      Inbound (Masuk)
-                    </button>
-                    <button
-                      onClick={() => setType('OUT')}
-                      className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all flex items-center justify-center gap-2 ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      <ArrowUpRight className="w-4 h-4" />
-                      Outbound (Keluar)
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Inbound Specific Fields */}
-              {type === 'IN' && (
-                  <div className="bg-emerald-50/50 p-4 rounded-lg border border-emerald-100 mb-6 space-y-4 animate-in fade-in slide-in-from-top-2">
-                      <h4 className="text-sm font-bold text-emerald-800 flex items-center gap-2">
-                          <FileText className="w-4 h-4" />
-                          Inbound Document Details
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600 mb-1">Supplier Name</label>
-                              <input 
-                                  type="text"
-                                  value={supplierName}
-                                  onChange={(e) => setSupplierName(e.target.value)}
-                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                  placeholder="Type supplier name..."
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600 mb-1">PO Number (Purchase Order)</label>
-                              <input 
-                                  type="text"
-                                  value={poNumber}
-                                  onChange={(e) => setPoNumber(e.target.value)}
-                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                  placeholder="e.g. PO-2023-001"
-                              />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-medium text-slate-600 mb-1">No. RI / Surat Jalan</label>
-                              <input 
-                                  type="text"
-                                  value={riNumber}
-                                  onChange={(e) => setRiNumber(e.target.value)}
-                                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                  placeholder="e.g. SJ-12345"
-                              />
-                          </div>
-                          
-                          {/* Photo Upload */}
-                          <div className="col-span-1 md:col-span-2">
-                               <label className="block text-xs font-medium text-slate-600 mb-1">Document Photos / Evidence</label>
-                               <div className="flex items-center gap-4">
-                                   <label className="flex items-center gap-2 cursor-pointer bg-white border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-lg text-sm text-slate-600 transition-colors">
-                                       <Camera className="w-4 h-4" />
-                                       <span>Upload Photos</span>
-                                       <input 
-                                           type="file" 
-                                           multiple 
-                                           accept="image/*"
-                                           onChange={(e) => handlePhotoUpload(e, 'new')}
-                                           className="hidden"
-                                       />
-                                   </label>
-                                   <div className="flex gap-2 overflow-x-auto pb-1">
-                                       {photos.map((p, idx) => (
-                                           <div key={idx} className="relative w-10 h-10 flex-shrink-0 group">
-                                               <img src={p} alt={`preview-${idx}`} className="w-full h-full object-cover rounded-md border border-slate-200" />
-                                               <button 
-                                                    onClick={() => removePhoto(idx, 'new')}
-                                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                                               >
-                                                   <X className="w-3 h-3" />
-                                               </button>
-                                           </div>
-                                       ))}
-                                   </div>
-                               </div>
-                          </div>
-                      </div>
-                  </div>
-              )}
-
-              {/* Autocomplete Item Selection */}
-              {renderItemInput('new', searchRef)}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Notes (Optional)</label>
-                <textarea 
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none h-20 resize-none"
-                  placeholder="Reference number, additional details..."
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Cart Summary */}
-          <div className="lg:col-span-1">
-             <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10">
-                  <h4 className="font-semibold text-slate-800 flex justify-between items-center">
-                    Current Batch
-                    <span className="bg-blue-100 text-blue-700 py-0.5 px-2 rounded-full text-xs">{cartItems.length} Items</span>
-                  </h4>
-                </div>
-                
-                <div className="flex-1 p-4 overflow-y-auto max-h-[400px] space-y-3 custom-scrollbar">
-                  {cartItems.length === 0 ? (
-                    <div className="text-center py-10 text-slate-400 text-sm">
-                      <Package className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                      No items added yet.
+                  <div>
+                    <label className="block text-sm font-medium mb-1 text-slate-700">Jenis Transaksi</label>
+                    <div className="flex bg-slate-100 p-1 rounded-lg h-[38px]">
+                      <button onClick={() => { setType('IN'); setValidationError(null); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG MASUK</button>
+                      <button onClick={() => { setType('OUT'); setValidationError(null); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG KELUAR</button>
                     </div>
-                  ) : (
-                    cartItems.map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-start p-3 bg-slate-50 rounded-lg group border border-transparent hover:border-slate-200 transition-all">
-                         <div>
-                            <div className="font-medium text-sm text-slate-800">{item.itemName}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              {item.quantityInput} {item.selectedUnit} <span className="text-slate-300 mx-1">|</span> Total: {item.totalBaseQuantity} Base
-                            </div>
-                         </div>
-                         <button 
-                           onClick={() => handleRemoveFromCart(idx, 'new')}
-                           className="text-slate-400 hover:text-rose-500 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                      </div>
-                    ))
-                  )}
+                  </div>
                 </div>
-
-                <div className="p-4 border-t border-slate-100 mt-auto bg-white">
-                   <button
-                     onClick={handleSubmitTransaction}
-                     disabled={cartItems.length === 0}
-                     className={`w-full py-3 rounded-lg text-sm font-bold text-white flex justify-center items-center gap-2 transition-all ${cartItems.length === 0 ? 'bg-slate-300 cursor-not-allowed' : type === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200' : 'bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-200'}`}
-                   >
-                     <Save className="w-4 h-4" />
-                     Confirm {type === 'IN' ? 'Inbound' : 'Outbound'}
-                   </button>
+                {type === 'IN' && (
+                  <div className="space-y-4 mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-100 animate-in slide-in-from-top-2">
+                    <input value={supplierName} onChange={e => setSupplierName(e.target.value)} className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-sm bg-white" placeholder="Nama Supplier / Pemasok" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <input value={poNumber} onChange={e => setPoNumber(e.target.value)} className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-sm bg-white" placeholder="No. Purchase Order (PO)" />
+                      <input value={riNumber} onChange={e => setRiNumber(e.target.value)} className="w-full px-3 py-2 border border-emerald-200 rounded-lg text-sm bg-white" placeholder="No. Surat Jalan (SJ)" />
+                    </div>
+                  </div>
+                )}
+                {renderItemInput('new', searchRef)}
+                <div className="mt-6">
+                    <label className="block text-sm font-medium mb-2 text-slate-700">Lampiran Foto (Opsional)</label>
+                    <div className="flex flex-wrap gap-2">
+                         {photos.map((p, i) => (
+                             <div key={i} className="relative w-20 h-20 rounded-lg overflow-hidden border border-slate-200 group">
+                                 <img src={p} className="w-full h-full object-cover" />
+                                 <button onClick={() => setPhotos(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-bl-lg opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-3 h-3" /></button>
+                             </div>
+                         ))}
+                         <label className="w-20 h-20 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg hover:bg-slate-50 hover:border-blue-400 cursor-pointer transition-all group">
+                            <Camera className="w-6 h-6 text-slate-400 group-hover:text-blue-500" />
+                            <span className="text-[10px] text-slate-400 mt-1 font-bold group-hover:text-blue-500 uppercase tracking-tighter">Upload</span>
+                            <input type="file" multiple accept="image/*" className="hidden" onChange={e => handlePhotoUpload(e, 'new')} />
+                         </label>
+                    </div>
                 </div>
-             </div>
-          </div>
+              </div>
+           </div>
+           <div className="lg:col-span-1">
+              <div className="bg-white rounded-xl border p-4 space-y-4 flex flex-col h-full shadow-sm">
+                <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm"><Package className="w-4 h-4 text-blue-600" /> Item di Keranjang</h3>
+                        <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold">{cartItems.length} ITEMS</span>
+                    </div>
+                    {cartItems.length > 0 ? (
+                        <div className="space-y-2">
+                            {cartItems.map((it, i) => (
+                                <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex justify-between items-center animate-in slide-in-from-right-2">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-[11px] font-bold text-slate-900 truncate uppercase">{it.itemName}</div>
+                                        <div className="text-[10px] text-slate-500 font-medium">Jumlah: {it.quantityInput} {it.selectedUnit}</div>
+                                    </div>
+                                    <button onClick={() => setCartItems(prev => prev.filter((_, idx) => idx !== i))} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-all"><Trash2 className="w-4 h-4" /></button>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center py-12 text-slate-300">
+                            <Package className="w-12 h-12 mb-2 opacity-10" />
+                            <p className="text-xs italic font-medium">Belum ada item ditambahkan</p>
+                        </div>
+                    )}
+                </div>
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                    <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Catatan tambahan untuk transaksi ini..." className="w-full p-3 border rounded-lg text-xs resize-none h-20 outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-slate-50/50" />
+                    <button onClick={handleSubmitTransaction} disabled={cartItems.length === 0} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-[0.98]">SUBMIT TRANSAKSI</button>
+                </div>
+              </div>
+           </div>
         </div>
       ) : (
-        // History Tab with Freeze Panel
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
-          <div className="overflow-auto flex-1 custom-scrollbar">
-             <table className="w-full text-left border-collapse min-w-[800px]">
-               <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                 <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                   <th className="px-6 py-4 bg-slate-50">Date</th>
-                   <th className="px-6 py-4 bg-slate-50">Type</th>
-                   <th className="px-6 py-4 bg-slate-50">Items Count</th>
-                   <th className="px-6 py-4 bg-slate-50">Details</th>
-                   <th className="px-6 py-4 text-right bg-slate-50">Action</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-200 text-sm">
-                 {transactions.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
-                        No transactions recorded yet.
-                      </td>
-                    </tr>
-                 ) : (
-                    [...transactions].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map(tx => (
-                      <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-slate-700 font-medium">{tx.date}</td>
-                        <td className="px-6 py-4">
-                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${tx.type === 'IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                             {tx.type === 'IN' ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-                             {tx.type}
-                           </span>
-                        </td>
-                        <td className="px-6 py-4 text-slate-600">
-                          {tx.items.length} Items ({tx.items.reduce((acc, i) => acc + i.totalBaseQuantity, 0)} Total Base Qty)
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 max-w-xs">
-                             <div className="flex flex-col gap-0.5">
-                                <span className="truncate">{tx.notes || '-'}</span>
-                                {tx.type === 'IN' && (
-                                    <span className="text-[10px] text-slate-400 flex flex-col gap-0.5 mt-1">
-                                        {tx.supplierName && (
-                                            <span className="flex items-center gap-1 font-medium text-slate-600">
-                                                <Truck className="w-3 h-3" /> {tx.supplierName}
-                                            </span>
-                                        )}
-                                        <div className="flex gap-1 flex-wrap">
-                                            {tx.poNumber && <span className="bg-slate-100 px-1 rounded">PO: {tx.poNumber}</span>}
-                                            {tx.riNumber && <span className="bg-slate-100 px-1 rounded">RI: {tx.riNumber}</span>}
-                                            {tx.photos && tx.photos.length > 0 && <ImageIcon className="w-3 h-3" />}
-                                        </div>
-                                    </span>
-                                )}
-                             </div>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                           {/* Even viewers can 'view' details, so we keep the button but maybe change icon/label if read-only */}
-                           <button 
-                             onClick={() => openEditModal(tx)}
-                             className="text-blue-600 hover:text-blue-800 text-xs font-medium flex items-center justify-end gap-1"
-                           >
-                             <Edit3 className="w-3 h-3" /> {canEdit ? 'Edit / View' : 'View Details'}
-                           </button>
-                        </td>
-                      </tr>
-                    ))
-                 )}
-               </tbody>
-             </table>
-          </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col">
+           <div className="overflow-auto flex-1 custom-scrollbar">
+               <table className="w-full text-left text-sm min-w-[600px]">
+                 <thead className="sticky top-0 bg-slate-50 z-10 border-b shadow-sm">
+                   <tr className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                     {isVisible('date') && <th className="px-6 py-4">Tanggal</th>}
+                     {isVisible('type') && <th className="px-6 py-4">Tipe</th>}
+                     {isVisible('details') && <th className="px-6 py-4">Rincian</th>}
+                     {isVisible('docs') && <th className="px-6 py-4">Dokumen</th>}
+                     {isVisible('notes') && <th className="px-6 py-4">Catatan</th>}
+                     <th className="px-6 py-4 text-right">Aksi</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                    {transactions.map(tx => (
+                        <tr key={tx.id} className="hover:bg-slate-50/80 group transition-colors">
+                            {isVisible('date') && <td className="px-6 py-4 font-medium text-slate-600">{tx.date}</td>}
+                            {isVisible('type') && <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tight ${tx.type === 'IN' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'}`}>{tx.type === 'IN' ? 'Masuk' : 'Keluar'}</span></td>}
+                            {isVisible('details') && <td className="px-6 py-4 text-xs font-semibold text-slate-700">{tx.items.length} Barang {tx.supplierName && <span className="text-slate-400 font-normal">({tx.supplierName})</span>}</td>}
+                            {isVisible('docs') && <td className="px-6 py-4 text-xs flex items-center gap-1 font-bold text-slate-500">{tx.photos?.length || 0} <ImageIcon className="w-3.5 h-3.5 text-slate-400" /></td>}
+                            {isVisible('notes') && <td className="px-6 py-4 max-w-[150px] truncate italic text-slate-400">{tx.notes || '-'}</td>}
+                            <td className="px-6 py-4 text-right"><button onClick={() => openEditModal(tx)} className="text-blue-600 font-bold hover:bg-blue-50 px-3 py-1 rounded-lg transition-all">{canEdit ? 'Edit' : 'Detail'}</button></td>
+                        </tr>
+                    ))}
+                 </tbody>
+               </table>
+           </div>
         </div>
       )}
 
-      {/* Edit Modal - Render conditionally based on active state but controlled by canEdit inside */}
       {isEditModalOpen && editingTransaction && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-           <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
-              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-6 py-4 border-b bg-slate-50 flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                     <div className="bg-blue-100 p-2 rounded-lg">
-                        <Edit3 className="w-4 h-4 text-blue-600" />
-                     </div>
-                     <h3 className="font-bold text-slate-800">{canEdit ? 'Edit Transaction' : 'Transaction Details'}</h3>
+                    <Edit3 className="w-5 h-5 text-blue-600" />
+                    <h3 className="font-bold text-slate-800">{canEdit ? 'Ubah Transaksi' : 'Detail Transaksi'}</h3>
                   </div>
-                  <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                     <X className="w-6 h-6" />
-                  </button>
+                  <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
               </div>
-
-              <div className="overflow-y-auto p-6 space-y-6 flex-1 custom-scrollbar">
-                 {/* Top Controls - Disabled if not editable */}
-                 <fieldset disabled={!canEdit} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-4">
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                            <input 
-                                type="date" 
-                                value={editDate}
-                                onChange={(e) => setEditDate(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-100"
-                            />
+                            <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Tanggal Transaksi</label>
+                            <input type="date" disabled={!canEdit} value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full border border-slate-200 rounded-lg p-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
                         </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                            <div className="flex bg-slate-100 rounded-lg p-1">
-                                <button
-                                onClick={() => setEditType('IN')}
-                                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${editType === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'} disabled:opacity-70`}
-                                >
-                                Inbound
-                                </button>
-                                <button
-                                onClick={() => setEditType('OUT')}
-                                className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${editType === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500'} disabled:opacity-70`}
-                                >
-                                Outbound
-                                </button>
+                        {editingTransaction.type === 'IN' && (
+                            <div className="p-4 bg-emerald-50 rounded-xl space-y-3 border border-emerald-100">
+                                <label className="text-[10px] font-bold text-emerald-600 block uppercase">Informasi Kedatangan</label>
+                                <input disabled={!canEdit} value={editSupplierName} onChange={e => setEditSupplierName(e.target.value)} placeholder="Nama Supplier" className="w-full border border-emerald-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:ring-2 focus:ring-emerald-500" />
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input disabled={!canEdit} value={editPoNumber} onChange={e => setEditPoNumber(e.target.value)} placeholder="Nomor PO" className="w-full border border-emerald-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:ring-2 focus:ring-emerald-500" />
+                                    <input disabled={!canEdit} value={editRiNumber} onChange={e => setEditRiNumber(e.target.value)} placeholder="Nomor SJ" className="w-full border border-emerald-200 rounded-lg p-2.5 text-xs bg-white outline-none focus:ring-2 focus:ring-emerald-500" />
+                                </div>
                             </div>
+                        )}
+                        <div>
+                            <label className="text-[10px] font-bold text-slate-400 block uppercase mb-1">Catatan Tambahan</label>
+                            <textarea disabled={!canEdit} value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={3} className="w-full border border-slate-200 rounded-lg p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500 transition-all resize-none" />
                         </div>
-                    </div>
-
-                    {/* Edit Inbound specific fields */}
-                    {editType === 'IN' && (
-                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                             <h4 className="text-sm font-bold text-slate-700 mb-3">Inbound Details</h4>
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-600 mb-1">Supplier Name</label>
-                                    <input 
-                                        type="text"
-                                        value={editSupplierName}
-                                        onChange={(e) => setEditSupplierName(e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                                        placeholder="Supplier Name..."
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-600 mb-1">PO Number</label>
-                                    <input 
-                                        type="text"
-                                        value={editPoNumber}
-                                        onChange={(e) => setEditPoNumber(e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-600 mb-1">RI / Surat Jalan</label>
-                                    <input 
-                                        type="text"
-                                        value={editRiNumber}
-                                        onChange={(e) => setEditRiNumber(e.target.value)}
-                                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                                    />
-                                </div>
-                                <div className="col-span-1 md:col-span-2">
-                                     <label className="block text-xs font-medium text-slate-600 mb-1">Photos</label>
-                                     <div className="flex gap-2 flex-wrap">
-                                         {editPhotos.map((p, idx) => (
-                                             <div key={idx} className="relative w-16 h-16 group">
-                                                 <img src={p} alt="doc" className="w-full h-full object-cover rounded border border-slate-300" />
-                                                  {canEdit && (
-                                                    <button 
-                                                        onClick={() => removePhoto(idx, 'edit')}
-                                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100"
-                                                    >
-                                                        <X className="w-3 h-3" />
-                                                    </button>
-                                                  )}
-                                             </div>
-                                         ))}
-                                         {canEdit && (
-                                             <label className="w-16 h-16 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded text-slate-400 cursor-pointer hover:bg-slate-50 hover:border-slate-400">
-                                                 <Upload className="w-4 h-4" />
-                                                 <span className="text-[9px] mt-1">Upload</span>
-                                                 <input 
-                                                    type="file" 
-                                                    multiple 
-                                                    accept="image/*"
-                                                    onChange={(e) => handlePhotoUpload(e, 'edit')}
-                                                    className="hidden"
-                                                 />
-                                             </label>
-                                         )}
-                                     </div>
-                                </div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-xl flex flex-col border border-slate-100">
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase mb-3">Daftar Barang Transaksi</label>
+                        <div className="space-y-2 overflow-y-auto max-h-[300px] pr-2 custom-scrollbar">
+                           {editCartItems.map((it, i) => (
+                             <div key={i} className="flex justify-between items-center text-xs bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                               <div className="min-w-0 flex-1">
+                                 <div className="font-bold text-slate-800 uppercase truncate">{it.itemName}</div>
+                                 <div className="text-[9px] text-slate-400 mt-0.5">ID: {it.itemId}</div>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                  {canEdit ? (
+                                    <input type="number" className="w-16 border border-blue-200 rounded-lg text-center py-1.5 font-bold bg-blue-50 text-blue-700 outline-none focus:ring-2 focus:ring-blue-500" value={it.quantityInput} onChange={e => updateEditItemQty(i, Number(e.target.value))} />
+                                  ) : <span className="font-bold px-3 py-1.5 bg-slate-100 rounded-lg">{it.quantityInput}</span>}
+                                  <span className="text-slate-500 font-bold uppercase">{it.selectedUnit}</span>
+                               </div>
                              </div>
-                         </div>
-                    )}
-
-                    {/* Cart Edit Area */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2">
-                            {canEdit && (
-                                <>
-                                    <h4 className="text-sm font-bold text-slate-700 mb-2">Add/Edit Items</h4>
-                                    {renderItemInput('edit', editSearchRef)}
-                                </>
-                            )}
-
-                            <div className="mt-4">
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
-                                <textarea 
-                                    value={editNotes}
-                                    onChange={(e) => setEditNotes(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none disabled:bg-slate-100"
-                                    rows={2}
-                                />
-                            </div>
+                           ))}
                         </div>
-                        
-                        <div className="lg:col-span-1 bg-slate-50 rounded-lg border border-slate-200 p-4">
-                            <h4 className="font-semibold text-slate-800 mb-3 text-sm flex justify-between">
-                                Items in Transaction
-                                <span className="bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full text-xs">{editCartItems.length}</span>
-                            </h4>
-                            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                                {editCartItems.map((item, idx) => (
-                                    <div key={idx} className="bg-white p-3 rounded border border-slate-200 flex justify-between items-start group">
-                                        <div>
-                                            <div className="font-medium text-sm text-slate-800">{item.itemName}</div>
-                                            <div className="text-xs text-slate-500">{item.quantityInput} {item.selectedUnit}</div>
-                                        </div>
-                                        {canEdit && (
-                                            <button 
-                                                onClick={() => handleRemoveFromCart(idx, 'edit')}
-                                                className="text-slate-400 hover:text-rose-500 p-1"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                    </div>
-                                ))}
-                                {editCartItems.length === 0 && (
-                                    <div className="text-center py-6 text-slate-400 text-xs">No items.</div>
-                                )}
+                      </div>
+                  </div>
+                  <div className="space-y-3">
+                     <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-bold text-slate-400 block uppercase">Lampiran & Preview Foto</label>
+                        {canEdit && (
+                            <label className="text-[10px] font-bold text-blue-600 flex items-center gap-1 cursor-pointer bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 transition-all">
+                                <Plus className="w-3 h-3" /> Tambah Lampiran
+                                <input type="file" multiple accept="image/*" className="hidden" onChange={e => handlePhotoUpload(e, 'edit')} />
+                            </label>
+                        )}
+                     </div>
+                     <div className="flex gap-2 flex-wrap bg-slate-100/50 p-3 rounded-xl min-h-[100px] border border-slate-200 border-dashed">
+                        {editPhotos.map((p, i) => (
+                          <div key={i} className="relative w-20 h-20 group flex-shrink-0">
+                            <img src={p} className="w-full h-full object-cover rounded-lg border border-white bg-white shadow-sm" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1.5 transition-opacity rounded-lg">
+                              <button onClick={() => setPreviewPhoto(p)} className="p-1.5 bg-white rounded-lg shadow text-slate-800 hover:scale-110 transition-transform"><Maximize2 className="w-3 h-3" /></button>
+                              {canEdit && <button onClick={() => setEditPhotos(prev => prev.filter((_, idx) => idx !== i))} className="p-1.5 bg-red-500 rounded-lg shadow text-white hover:scale-110 transition-transform"><Trash2 className="w-3 h-3" /></button>}
                             </div>
-                        </div>
-                    </div>
-                 </fieldset>
+                          </div>
+                        ))}
+                        {editPhotos.length === 0 && <div className="flex flex-col items-center justify-center w-full text-slate-300 italic py-4">
+                            <ImageIcon className="w-6 h-6 opacity-20 mb-1" />
+                            <span className="text-[10px]">Belum ada lampiran visual</span>
+                        </div>}
+                     </div>
+                  </div>
               </div>
-
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white sticky bottom-0 z-10">
-                 <button 
-                    onClick={() => setIsEditModalOpen(false)}
-                    className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium"
-                 >
-                    Close
-                 </button>
-                 {canEdit && (
-                    <button
-                        onClick={handleSaveEdit}
-                        disabled={editCartItems.length === 0}
-                        className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm flex items-center gap-2"
-                    >
-                        <Save className="w-4 h-4" />
-                        Save Changes & Update Stock
-                    </button>
-                 )}
+              <div className="p-4 border-t bg-slate-50 flex justify-end gap-3">
+                <button onClick={() => setIsEditModalOpen(false)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-200 rounded-xl transition-all">BATAL</button>
+                {canEdit && <button onClick={handleSaveEdit} className="px-8 py-2.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all">SIMPAN PERUBAHAN</button>}
               </div>
            </div>
          </div>
+      )}
+
+      {previewPhoto && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-300" onClick={() => setPreviewPhoto(null)}>
+           <div className="relative max-w-full max-h-[90vh]" onClick={e => e.stopPropagation()}>
+               <button onClick={() => setPreviewPhoto(null)} className="absolute -top-12 right-0 text-white hover:text-red-400 bg-white/10 p-2 rounded-full transition-all"><X className="w-8 h-8" /></button>
+               <img src={previewPhoto} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-200" />
+           </div>
+        </div>
       )}
     </div>
   );

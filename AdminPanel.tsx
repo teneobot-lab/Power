@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, AppSettings, UserRole, MediaItem } from '../types';
-import { generateId } from '../utils/storageUtils';
+import { User, AppSettings, UserRole, MediaItem } from './types';
+import { generateId } from './utils/storageUtils';
 import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -215,9 +215,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex-1 flex flex-col items-center justify-center p-8">
                         <h2 className="text-2xl font-bold mb-8">Pilih Hiburan</h2>
                         <div className="flex gap-8">
-                            {/* Fixed: Replaced undefined enterPlatform with setActivePlatform */}
+                            {/* Fix: Replaced undefined enterPlatform with the correct state setter setActivePlatform */}
                             <button onClick={() => setActivePlatform('youtube')} className="p-8 bg-red-600/10 hover:bg-red-600 rounded-2xl border border-red-500/20 transition-all flex flex-col items-center gap-4"><Youtube className="w-12 h-12" /> <span className="font-bold">YouTube</span></button>
-                            {/* Fixed: Replaced undefined enterPlatform with setActivePlatform */}
+                            {/* Fix: Replaced undefined enterPlatform with the correct state setter setActivePlatform */}
                             <button onClick={() => setActivePlatform('tiktok')} className="p-8 bg-slate-800 hover:bg-black rounded-2xl border border-slate-700 transition-all flex flex-col items-center gap-4"><Video className="w-12 h-12" /> <span className="font-bold">TikTok</span></button>
                         </div>
                     </div>

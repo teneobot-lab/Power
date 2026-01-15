@@ -1,15 +1,15 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { InventoryItem, ChatMessage } from '../types';
 import { chatWithInventoryBot, getInventoryInsights } from '../services/geminiService';
-import { Send, Bot, User, Sparkles, Loader2, BarChart2, AlertCircle } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Loader2, BarChart2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface AIAssistantProps {
   items: InventoryItem[];
-  apiKey?: string;
 }
 
-const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
+const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -44,8 +44,8 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
     setInputValue('');
     setIsLoading(true);
 
-    // We pass the apiKey even if it's empty, the service handles the fallback/error message
-    const responseText = await chatWithInventoryBot(inputValue, items, apiKey);
+    // Using refactored service that relies on process.env.API_KEY
+    const responseText = await chatWithInventoryBot(inputValue, items);
 
     const modelMsg: ChatMessage = {
       id: (Date.now() + 1).toString(),
@@ -70,7 +70,8 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
     }]);
     
     setIsLoading(true);
-    const report = await getInventoryInsights(items, apiKey);
+    // Using refactored service that relies on process.env.API_KEY
+    const report = await getInventoryInsights(items);
     
     setMessages(prev => [...prev, {
       id: (Date.now() + 1).toString(),
@@ -104,14 +105,6 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items, apiKey }) => {
         </button>
       </div>
       
-      {/* Helper Banner (Only if Key is missing, but doesn't block UI) */}
-      {!apiKey && (
-         <div className="bg-blue-50 border-b border-blue-100 px-4 py-2 text-xs text-blue-800 flex items-center gap-2 flex-shrink-0">
-            <AlertCircle className="w-4 h-4" />
-            <span>Tip: Configure "Gemini API Key" in Admin Panel for full functionality.</span>
-         </div>
-      )}
-
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
         {messages.map((msg) => (

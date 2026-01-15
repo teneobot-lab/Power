@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend 
 } from 'recharts';
-import { DollarSign, Package, AlertTriangle, TrendingUp } from 'lucide-react';
+import { DollarSign, Package, AlertTriangle, TrendingUp, ArrowRight } from 'lucide-react';
 
 interface DashboardProps {
   items: InventoryItem[];
@@ -53,11 +53,16 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
   
   const stats = useMemo(() => {
     const totalItems = items.length;
-    const lowStockCount = items.filter(i => i.quantity <= i.minLevel).length;
+    const lowStockCount = items.filter(i => i.minLevel > 0 && i.quantity <= i.minLevel).length;
     const totalValue = items.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0);
     const totalStockCount = items.reduce((acc, curr) => acc + curr.quantity, 0);
 
     return { totalItems, lowStockCount, totalValue, totalStockCount };
+  }, [items]);
+
+  const lowStockItems = useMemo(() => {
+    return items.filter(i => i.minLevel > 0 && i.quantity <= i.minLevel)
+      .sort((a, b) => (a.quantity / a.minLevel) - (b.quantity / b.minLevel));
   }, [items]);
 
   const categoryData = useMemo(() => {
@@ -133,49 +138,93 @@ const Dashboard: React.FC<DashboardProps> = ({ items }) => {
                 </div>
             </div>
 
-            {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Charts & Alerts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 
                 {/* Top Stock Levels */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Items by Quantity</h3>
-                <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={topItemsData} layout="vertical" margin={{ left: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                        <XAxis type="number" />
-                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
-                        <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
-                        <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} />
-                    </BarChart>
-                    </ResponsiveContainer>
-                </div>
+                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Items by Quantity</h3>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={topItemsData} layout="vertical" margin={{ left: 20 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                            <XAxis type="number" />
+                            <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
+                            <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                            <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} />
+                        </BarChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
 
                 {/* Category Distribution */}
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-800 mb-4">Inventory by Category</h3>
-                <div className="h-[300px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                        <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={100}
-                        fill="#8884d8"
-                        dataKey="value"
-                        >
-                        {categoryData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                        </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                    </PieChart>
-                    </ResponsiveContainer>
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Inventory by Category</h3>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                            <Pie
+                            data={categoryData}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                            >
+                            {categoryData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                            </Pie>
+                            <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+                        </PieChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
+
+                {/* Low Stock Notifications List */}
+                <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-amber-500" />
+                            Low Stock Warnings
+                        </h3>
+                        {stats.lowStockCount > 0 && (
+                            <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
+                                {stats.lowStockCount} ALERTS
+                            </span>
+                        )}
+                    </div>
+                    {lowStockItems.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            {lowStockItems.map(item => (
+                                <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-lg group hover:border-amber-300 transition-all">
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-bold text-slate-800 truncate">{item.name}</p>
+                                        <p className="text-xs text-slate-500">SKU: {item.sku}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="flex items-center gap-1.5 justify-end">
+                                            <span className="text-sm font-bold text-amber-600">{item.quantity}</span>
+                                            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">/ {item.minLevel} {item.baseUnit}</span>
+                                        </div>
+                                        <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
+                                            <div 
+                                                className="h-full bg-amber-500 rounded-full" 
+                                                style={{ width: `${Math.min(100, (item.quantity / item.minLevel) * 100)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+                            <Package className="w-12 h-12 mb-3 opacity-20" />
+                            <p className="text-sm">All stock levels are currently healthy.</p>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

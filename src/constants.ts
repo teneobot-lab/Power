@@ -1,3 +1,4 @@
+
 import { InventoryItem, Supplier, User, AppSettings, TablePreferences } from './types';
 
 export const INITIAL_INVENTORY: InventoryItem[] = []; // Kosongkan initial state agar tidak bingung dengan data DB
@@ -16,8 +17,7 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  geminiApiKey: '',
-  // PENTING: Gunakan '/' agar request otomatis melalui Nginx Reverse Proxy
+  // Fix: Removed geminiApiKey.
   viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',

@@ -1,4 +1,5 @@
-import { InventoryItem, Transaction, Supplier, User, AppSettings } from "../types";
+
+import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectLog } from "../types";
 
 interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -9,6 +10,7 @@ interface ApiResponse<T> {
 interface FullState {
   inventory: InventoryItem[];
   transactions: Transaction[];
+  rejectLogs: RejectLog[];
   suppliers: Supplier[];
   users: User[];
   settings: Partial<AppSettings>;
@@ -53,7 +55,7 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
 
 export const syncBackendData = async (
   baseUrl: string, 
-  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings', 
+  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 
   data: any
 ): Promise<{ success: boolean; message?: string }> => {
   try {
@@ -82,6 +84,32 @@ export const syncBackendData = async (
     };
   } catch (error: any) {
     console.error(`Error syncing ${type}:`, error);
+    return { success: false, message: error.message || 'Network error' };
+  }
+};
+
+/**
+ * Sends all application data to the backend for a full spreadsheet refresh.
+ */
+export const syncFullToSheets = async (
+  baseUrl: string,
+  fullData: FullState
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const isGas = baseUrl.includes('script.google.com');
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'full_sync', data: fullData }),
+      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
+    });
+
+    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
+    const json = await response.json();
+    return { success: json.status === 'success', message: json.message };
+  } catch (error: any) {
     return { success: false, message: error.message || 'Network error' };
   }
 };

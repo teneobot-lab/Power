@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2/promise');
@@ -28,17 +29,12 @@ const pool = mysql.createPool(dbConfig);
 // Helper to format ISO Date string to MySQL Datetime format
 const formatSqlValue = (val) => {
     if (val === undefined || val === null) return null;
-    
-    // If it's a string that looks like an ISO date (e.g., 2026-01-14T16:33:48.548Z)
     if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
         return val.slice(0, 19).replace('T', ' ');
     }
-    
-    // If it's a complex object (Array/Object), stringify it for LONGTEXT columns
     if (typeof val === 'object') {
         return JSON.stringify(val);
     }
-    
     return val;
 };
 
@@ -61,6 +57,8 @@ app.get('/api/data', async (req, res) => {
     try {
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions');
+        const [reject_inventory] = await pool.query('SELECT * FROM reject_inventory');
+        const [rejects] = await pool.query('SELECT * FROM rejects');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
         const [users] = await pool.query('SELECT * FROM users');
         const [settingsRows] = await pool.query('SELECT * FROM settings');
@@ -92,6 +90,8 @@ app.get('/api/data', async (req, res) => {
             data: { 
                 inventory: inventory.map(formatRow), 
                 transactions: transactions.map(formatRow), 
+                reject_inventory: reject_inventory.map(formatRow),
+                rejects: rejects.map(formatRow),
                 suppliers: suppliers.map(formatRow), 
                 users: users.map(formatRow), 
                 settings 
@@ -111,7 +111,15 @@ app.post('/api/sync', async (req, res) => {
     const connection = await pool.getConnection();
     try {
         await connection.beginTransaction();
-        const toSnake = (str) => str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        const toSnake = (str) => {
+            const map = { 
+                'baseUnit':'base_unit', 'alternativeUnits':'alternative_units', 'minLevel':'min_level', 
+                'unitPrice':'unit_price', 'lastUpdated':'last_updated', 'contactPerson':'contact_person', 
+                'lastLogin':'last_login', 'supplierName':'supplier_name', 'poNumber':'po_number', 
+                'riNumber':'ri_number', 'unit2':'unit2', 'ratio2':'ratio2', 'unit3':'unit3', 'ratio3':'ratio3' 
+            };
+            return map[str] || str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        };
 
         if (type === 'settings') {
              await connection.query('DELETE FROM settings');
@@ -125,16 +133,14 @@ app.post('/api/sync', async (req, res) => {
              }
         } else {
             // Secure table name with backticks
-            await connection.query(`DELETE FROM \`${type}\``);
+            const tableName = type === 'reject_inventory' ? 'reject_inventory' : type;
+            await connection.query(`DELETE FROM \`${tableName}\``);
             
             if (Array.isArray(data) && data.length > 0) {
                 const keys = Object.keys(data[0]);
                 const snakeKeys = keys.map(toSnake);
-                
-                // Construct batch insert values with date formatting
                 const values = data.map(item => keys.map(k => formatSqlValue(item[k])));
-                
-                const sql = `INSERT INTO \`${type}\` (${snakeKeys.map(k => `\`${k}\``).join(', ')}) VALUES ?`;
+                const sql = `INSERT INTO \`${tableName}\` (${snakeKeys.map(k => `\`${k}\``).join(', ')}) VALUES ?`;
                 await connection.query(sql, [values]);
             }
         }

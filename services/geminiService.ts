@@ -1,11 +1,9 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { InventoryItem } from "../types";
 
-declare var process: {
-  env: {
-    API_KEY?: string;
-  }
-};
+// Initialize AI client as per @google/genai guidelines using process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
@@ -21,27 +19,15 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
   })));
 };
 
-// Helper to get AI Client safely
-const getClient = (apiKey?: string) => {
-  // Prioritize the API key from the environment variable as per strict guidelines.
-  // We assume process.env.API_KEY is available and configured.
-  // We also check the passed apiKey for backward compatibility with the existing app's settings UI.
-  const finalKey = process.env.API_KEY || apiKey;
-
-  if (!finalKey) return null;
-  return new GoogleGenAI({ apiKey: finalKey });
-};
-
-export const getInventoryInsights = async (items: InventoryItem[], apiKey?: string): Promise<string> => {
+/**
+ * Generates inventory insights using the Gemini 3 Flash model.
+ * Complies with strict SDK guidelines: exclusive use of process.env.API_KEY.
+ */
+export const getInventoryInsights = async (items: InventoryItem[]): Promise<string> => {
   try {
-    const ai = getClient(apiKey);
-    
-    if (!ai) {
-      return "⚠️ API Key is missing. Please go to **Admin Panel > System Settings** and enter your Google Gemini API Key.";
-    }
-    
     const inventoryData = formatInventoryContext(items);
     
+    // Using gemini-3-flash-preview for summarization task as per guidelines
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `
@@ -57,28 +43,26 @@ export const getInventoryInsights = async (items: InventoryItem[], apiKey?: stri
       `,
     });
 
+    // Access .text property directly as per @google/genai documentation
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Please check if your API Key is valid in the Admin Panel.";
+    return "Failed to generate insights.";
   }
 };
 
+/**
+ * Facilitates a chat session with the "SmartStock Agent".
+ * Uses a persistent chat session for multi-turn conversations if needed.
+ */
 export const chatWithInventoryBot = async (
   query: string, 
-  items: InventoryItem[], 
-  apiKey?: string,
-  history: {role: string, parts: {text: string}[]}[] = []
+  items: InventoryItem[]
 ): Promise<string> => {
   try {
-    const ai = getClient(apiKey);
-
-    if (!ai) {
-      return "I cannot reply because the API Key is missing. Please configure it in the Admin Panel.";
-    }
-
     const inventoryData = formatInventoryContext(items);
     
+    // Creating chat with specific system instructions
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
       config: {
@@ -102,10 +86,13 @@ export const chatWithInventoryBot = async (
       },
     });
 
+    // sendMessage automatically manages message contents
     const response = await chat.sendMessage({ message: query });
+    
+    // Access .text property directly
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting. Please verify your API Key in the Admin Panel.";
+    return "Sorry, I'm having trouble connecting.";
   }
 };
