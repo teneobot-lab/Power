@@ -1,5 +1,5 @@
 
-import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectItem, RejectLog } from "../types";
+import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectLog, RejectItem } from "../types";
 
 interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -29,7 +29,6 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
       headers: { 'Accept': 'application/json' }
     });
 
-    // Handle HTML response (e.g., 502 Bad Gateway from Vercel, 404 Nginx, etc)
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
         console.warn(`⚠️ Backend Issue at ${url}. Received HTML instead of JSON.`);
@@ -84,9 +83,6 @@ export const syncBackendData = async (
   }
 };
 
-/**
- * Sends all application data to the backend for a full spreadsheet refresh.
- */
 export const syncFullToSheets = async (
   baseUrl: string,
   fullData: FullState
@@ -111,39 +107,47 @@ export const syncFullToSheets = async (
 };
 
 /**
- * Checks if the backend server is reachable.
+ * Checks if the backend server is reachable with detail.
  */
-export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string }> => {
+export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string; dbStatus?: 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'; latency?: number }> => {
   try {
+    const start = Date.now();
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     
     // Jika GAS
     if (baseUrl.includes('script.google.com')) return { online: true, message: 'Google Apps Script URL detected' };
     
-    // Jika Mode Proxy ('/'), kita cek endpoint root '/' yang seharusnya diteruskan ke VPS
-    // TAPI karena '/' di frontend adalah file index.html React, kita harus hit endpoint API spesifik
-    const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/`; 
+    // Cek endpoint API Data (karena ini yang diproxy Vercel)
+    const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/api/data`; 
     
     console.log("Checking connection to:", url);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 detik timeout
 
+    // Request hanya HEAD atau GET simple jika backend support, tapi disini kita pakai GET data
+    // karena backend kita cek DB saat GET /api/data
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
+    
+    const latency = Date.now() - start;
 
-    // Cek 502 Bad Gateway khusus
+    // Cek 502 Bad Gateway (Server Mati / Proxy Gagal)
     if (response.status === 502) {
         return { online: false, message: 'Error 502: VPS Port 3000 tertutup atau Server mati.' };
+    }
+    
+    // Cek 503 Service Unavailable (Middleware checkDb di backend)
+    if (response.status === 503) {
+        return { online: true, message: 'Server Online, tapi Database Gagal', dbStatus: 'DISCONNECTED', latency };
     }
 
     if (response.ok) {
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
-             return { online: true, message: 'Server Proxy API Online!' };
+             return { online: true, message: `Terhubung (${latency}ms)`, dbStatus: 'CONNECTED', latency };
         }
-        // Jika backend root (/) merespon HTML "SmartStock Server Berjalan!", itu juga sukses
-        return { online: true, message: 'Server Online!' };
+        return { online: true, message: `Server Online (HTML Resp)`, dbStatus: 'UNKNOWN', latency };
     } else {
         return { online: false, message: `Server Error: ${response.status}` };
     }

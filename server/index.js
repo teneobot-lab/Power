@@ -8,41 +8,43 @@ const app = express();
 const PORT = 3000;
 
 // Middleware
-app.use(cors()); // Buka akses untuk semua IP
-app.use(bodyParser.json({ limit: '50mb' })); // Limit besar untuk upload foto
+app.use(cors());
+app.use(bodyParser.json({ limit: '50mb' }));
 
-// Konfigurasi Database (Root tanpa password)
+// Konfigurasi Database (Root tanpa password default)
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '', 
-    database: 'smartstock_db',
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '', 
+    database: process.env.DB_NAME || 'smartstock_db',
     dateStrings: true
 };
 
 let pool;
+let dbConnected = false;
 
-// Fungsi Koneksi Database
+// Fungsi Koneksi Database (Retry Pattern)
 async function initDb() {
     try {
         pool = mysql.createPool(dbConfig);
         const connection = await pool.getConnection();
         console.log('✅ DATABASE TERHUBUNG: SmartStock DB Ready!');
+        dbConnected = true;
         connection.release();
     } catch (err) {
         console.error('❌ DATABASE ERROR:', err.message);
-        // Retry connection after 5 seconds if failed
-        setTimeout(initDb, 5000);
+        dbConnected = false;
+        // Retry setiap 5 detik jika gagal
+        setTimeout(initDb, 5000); 
     }
 }
 
-// Helper: Convert Snake_case (DB) -> CamelCase (Frontend)
+// Helper: Snake_case -> CamelCase
 const toCamel = (row) => {
     const res = {};
     for (let key in row) {
         const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
         let val = row[key];
-        // Parse JSON String kembali ke Object/Array
         if (['alternativeUnits', 'items', 'photos'].includes(camel) && typeof val === 'string') {
             try { val = JSON.parse(val); } catch(e) { val = []; }
         }
@@ -53,20 +55,30 @@ const toCamel = (row) => {
 
 // --- ROUTES API ---
 
-// 1. Cek Status Server
+// 1. Cek Status Server (Health Check)
 app.get('/', (req, res) => {
-    res.send(`
-        <h1 style="color:green; font-family:sans-serif;">🚀 SmartStock Server Berjalan!</h1>
-        <p>Database: <b>Connected</b></p>
-        <p>Port: <b>${PORT}</b></p>
-    `);
+    res.json({
+        status: 'online',
+        message: 'SmartStock Server Berjalan!',
+        port: PORT,
+        database_status: dbConnected ? 'CONNECTED' : 'DISCONNECTED (Retrying...)'
+    });
 });
 
-// 2. Ambil Semua Data (GET)
-app.get('/api/data', async (req, res) => {
-    if (!pool) await initDb();
+// Middleware Check DB
+const checkDb = (req, res, next) => {
+    if (!pool || !dbConnected) {
+        return res.status(503).json({ 
+            status: 'error', 
+            message: 'Database belum terhubung. Pastikan MySQL berjalan dan user/pass benar.' 
+        });
+    }
+    next();
+};
+
+// 2. Ambil Data
+app.get('/api/data', checkDb, async (req, res) => {
     try {
-        // Ambil data dari semua tabel secara paralel
         const [inv] = await pool.query('SELECT * FROM inventory');
         const [tx] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
         const [rejInv] = await pool.query('SELECT * FROM reject_inventory');
@@ -75,7 +87,6 @@ app.get('/api/data', async (req, res) => {
         const [usr] = await pool.query('SELECT * FROM users');
         const [setRows] = await pool.query('SELECT * FROM settings');
 
-        // Format Settings
         const settings = {};
         setRows.forEach(r => {
             let v = r.setting_value;
@@ -101,16 +112,12 @@ app.get('/api/data', async (req, res) => {
     }
 });
 
-// 3. Simpan Data / Sync (POST)
-app.post('/api/sync', async (req, res) => {
+// 3. Sync Data
+app.post('/api/sync', checkDb, async (req, res) => {
     const { type, data } = req.body;
-    if (!pool) await initDb();
-    
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
-
-        // Mapping nama kolom frontend ke database
         const mapCols = (s) => {
             const m = { 
                 'baseUnit':'base_unit', 'minLevel':'min_level', 'unitPrice':'unit_price', 
@@ -131,50 +138,44 @@ app.post('/api/sync', async (req, res) => {
                 await conn.query('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [k, v]);
             }
         } else {
-            // Mapping tipe ke nama tabel
             let table = type;
             if (type === 'inventory') table = 'inventory';
             if (type === 'transactions') table = 'transactions';
             if (type === 'rejectItems' || type === 'reject_inventory') table = 'reject_inventory';
             if (type === 'rejectLogs' || type === 'rejects') table = 'rejects';
+            if (type === 'suppliers') table = 'suppliers';
+            if (type === 'users') table = 'users';
             
-            // Hapus data lama (Strategy Full Sync untuk konsistensi)
             await conn.query(`DELETE FROM \`${table}\``);
             
             if (data && data.length > 0) {
                 const keys = Object.keys(data[0]);
                 const cols = keys.map(mapCols);
-                
-                // Siapkan data bulk insert
                 const values = data.map(item => keys.map(k => {
                     let v = item[k];
                     if (typeof v === 'object' && v !== null) return JSON.stringify(v);
-                    // Format tanggal agar diterima MySQL
                     if (typeof v === 'string' && v.includes('T') && v.length > 20) return v.slice(0, 19).replace('T', ' ');
                     return v;
                 }));
-                
                 await conn.query(`INSERT INTO \`${table}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES ?`, [values]);
             }
         }
-
         await conn.commit();
-        console.log(`✅ SYNC SUKSES: ${type} (${Array.isArray(data) ? data.length : 1} records)`);
+        console.log(`✅ SYNC: ${type}`);
         res.json({ status: 'success' });
     } catch (e) {
         await conn.rollback();
-        console.error(`❌ SYNC GAGAL (${type}):`, e.message);
+        console.error(`❌ SYNC FAIL:`, e.message);
         res.status(500).json({ status: 'error', message: e.message });
     } finally {
         conn.release();
     }
 });
 
-// Jalankan Server pada IP 0.0.0.0 (Publik)
-initDb().then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-        console.log('\n================================================');
-        console.log(`🚀 SERVER BERJALAN DI PORT ${PORT}`);
-        console.log('================================================\n');
-    });
+// PENTING: Start Server SEBELUM Database connect
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 SERVER BERJALAN DI PORT ${PORT}`);
 });
+
+// Mulai koneksi database di background
+initDb();

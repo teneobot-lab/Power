@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
 import { generateId } from '../utils/storageUtils';
 import { checkServerConnection } from '../services/api';
-import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2, Wifi, WifiOff, Activity } from 'lucide-react';
+import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2, Wifi, WifiOff, Activity, Database, Clock } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -35,8 +35,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [showAddMedia, setShowAddMedia] = useState(false);
   
   // Connection Test State
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed' | 'partial'>('idle');
   const [connectionMsg, setConnectionMsg] = useState('');
+  const [latency, setLatency] = useState<number | undefined>(undefined);
+  const [dbStatus, setDbStatus] = useState<string | undefined>(undefined);
 
   useEffect(() => { setTempSettings(settings); }, [settings]);
 
@@ -61,11 +63,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       
       setConnectionStatus('checking');
+      setLatency(undefined);
+      setDbStatus(undefined);
+
       const result = await checkServerConnection(tempSettings.viteGasUrl);
       
       if (result.online) {
-          setConnectionStatus('success');
+          if (result.dbStatus === 'DISCONNECTED') {
+             setConnectionStatus('partial');
+          } else {
+             setConnectionStatus('success');
+          }
           setConnectionMsg(result.message);
+          setLatency(result.latency);
+          setDbStatus(result.dbStatus);
       } else {
           setConnectionStatus('failed');
           setConnectionMsg(result.message);
@@ -147,26 +158,55 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             disabled={connectionStatus === 'checking'}
                             className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm border ${
                                 connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                                connectionStatus === 'partial' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                 connectionStatus === 'failed' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                                 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                             }`}
                           >
                              {connectionStatus === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : 
                               connectionStatus === 'success' ? <Wifi className="w-4 h-4" /> : 
+                              connectionStatus === 'partial' ? <AlertTriangle className="w-4 h-4" /> :
                               connectionStatus === 'failed' ? <WifiOff className="w-4 h-4" /> :
                               <Activity className="w-4 h-4" />
                              }
                              {connectionStatus === 'checking' ? 'Mengecek...' : 
-                              connectionStatus === 'success' ? 'Terhubung' : 
+                              connectionStatus === 'success' ? 'Stabil' : 
+                              connectionStatus === 'partial' ? 'Warning' :
                               connectionStatus === 'failed' ? 'Gagal' : 'Tes Koneksi'
                              }
                           </button>
                       </div>
-                      {connectionMsg && (
-                          <p className={`text-xs mt-2 font-medium ${connectionStatus === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                              {connectionStatus === 'success' ? '✅ ' : '❌ '} {connectionMsg}
-                          </p>
+                      
+                      {/* Connection Detail Result */}
+                      {connectionStatus !== 'idle' && connectionStatus !== 'checking' && (
+                          <div className={`mt-4 p-4 rounded-xl border flex flex-col sm:flex-row gap-4 animate-in fade-in slide-in-from-top-2 ${
+                              connectionStatus === 'success' ? 'bg-emerald-50 border-emerald-100' : 
+                              connectionStatus === 'partial' ? 'bg-amber-50 border-amber-100' :
+                              'bg-rose-50 border-rose-100'
+                          }`}>
+                              <div className="flex-1">
+                                  <h4 className={`text-sm font-bold mb-1 ${
+                                      connectionStatus === 'success' ? 'text-emerald-800' : 
+                                      connectionStatus === 'partial' ? 'text-amber-800' : 'text-rose-800'
+                                  }`}>
+                                      {connectionMsg}
+                                  </h4>
+                                  <div className="flex gap-4 text-xs mt-2">
+                                      {latency && (
+                                          <span className="flex items-center gap-1 opacity-80 font-mono">
+                                              <Clock className="w-3 h-3" /> {latency}ms
+                                          </span>
+                                      )}
+                                      {dbStatus && (
+                                          <span className={`flex items-center gap-1 font-bold ${dbStatus === 'CONNECTED' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                                              <Database className="w-3 h-3" /> DB: {dbStatus}
+                                          </span>
+                                      )}
+                                  </div>
+                              </div>
+                          </div>
                       )}
+
                       <div className="mt-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
                           <p className="text-[11px] text-slate-600">
                               <span className="font-bold text-blue-700">TIPS KONEKSI:</span> Masukkan URL VPS Anda (contoh: <code>http://IP_VPS:3000</code>).
