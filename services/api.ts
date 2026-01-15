@@ -103,3 +103,31 @@ export const syncFullToSheets = async (
     return { success: false, message: error.message || 'Network error' };
   }
 };
+
+/**
+ * Checks if the backend server is reachable.
+ */
+export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string }> => {
+  try {
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    // Jika GAS, kita tidak bisa cek root, jadi return true asumsi user benar
+    if (baseUrl.includes('script.google.com')) return { online: true, message: 'Google Apps Script URL detected' };
+    
+    // Untuk VPS, kita cek root endpoint '/' yang mengembalikan pesan HTML
+    const url = `${cleanBase}/`; 
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 detik timeout
+
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+        return { online: true, message: 'Server Online & Siap!' };
+    } else {
+        return { online: false, message: `Server Error: ${response.status}` };
+    }
+  } catch (error: any) {
+    return { online: false, message: error.name === 'AbortError' ? 'Koneksi Timeout' : 'Tidak dapat terhubung' };
+  }
+};

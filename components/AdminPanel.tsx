@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { checkServerConnection } from '../services/api';
+import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2, Wifi, WifiOff, Activity } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -32,6 +33,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [mediaTitle, setMediaTitle] = useState('');
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [showAddMedia, setShowAddMedia] = useState(false);
+  
+  // Connection Test State
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
+  const [connectionMsg, setConnectionMsg] = useState('');
 
   useEffect(() => { setTempSettings(settings); }, [settings]);
 
@@ -46,6 +51,25 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsSyncing(true);
     await onFullSyncToSheets();
     setIsSyncing(false);
+  };
+  
+  const handleTestConnection = async () => {
+      if (!tempSettings.viteGasUrl) {
+          setConnectionStatus('failed');
+          setConnectionMsg('URL belum diisi');
+          return;
+      }
+      
+      setConnectionStatus('checking');
+      const result = await checkServerConnection(tempSettings.viteGasUrl);
+      
+      if (result.online) {
+          setConnectionStatus('success');
+          setConnectionMsg(result.message);
+      } else {
+          setConnectionStatus('failed');
+          setConnectionMsg(result.message);
+      }
   };
 
   const handleUseVercelProxy = () => { setTempSettings(prev => ({ ...prev, viteGasUrl: '/' })); };
@@ -100,22 +124,59 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'settings' && (
             <div className="space-y-6">
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Settings className="w-5 h-5 text-slate-500" /> Konfigurasi Aplikasi</h2>
+                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Settings className="w-5 h-5 text-slate-500" /> Konfigurasi Server</h2>
                  <div className="space-y-6">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">YouTube Data API Key (Opsional)</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Backend / VPS URL</label>
+                      <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input 
+                                type="url" 
+                                className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" 
+                                placeholder="http://103.xxx.xxx.xxx:3000" 
+                                value={tempSettings.viteGasUrl} 
+                                onChange={(e) => {
+                                    setTempSettings({...tempSettings, viteGasUrl: e.target.value});
+                                    setConnectionStatus('idle');
+                                }} 
+                            />
+                          </div>
+                          <button 
+                            onClick={handleTestConnection}
+                            disabled={connectionStatus === 'checking'}
+                            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm border ${
+                                connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                                connectionStatus === 'failed' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                             {connectionStatus === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                              connectionStatus === 'success' ? <Wifi className="w-4 h-4" /> : 
+                              connectionStatus === 'failed' ? <WifiOff className="w-4 h-4" /> :
+                              <Activity className="w-4 h-4" />
+                             }
+                             {connectionStatus === 'checking' ? 'Mengecek...' : 
+                              connectionStatus === 'success' ? 'Terhubung' : 
+                              connectionStatus === 'failed' ? 'Gagal' : 'Tes Koneksi'
+                             }
+                          </button>
+                      </div>
+                      {connectionMsg && (
+                          <p className={`text-xs mt-2 font-medium ${connectionStatus === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                              {connectionStatus === 'success' ? '✅ ' : '❌ '} {connectionMsg}
+                          </p>
+                      )}
+                      <p className="text-[11px] text-slate-400 mt-2">
+                          Masukkan URL VPS Anda (contoh: <code>http://IP_ADDRESS:3000</code>). Pastikan port 3000 sudah dibuka di VPS.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Gemini & YouTube API Key (Opsional)</label>
                       <input type="password" className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" placeholder="AIzaSy..." value={tempSettings.youtubeApiKey || ''} onChange={(e) => setTempSettings({...tempSettings, youtubeApiKey: e.target.value})} />
                     </div>
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                           <label className="block text-sm font-medium text-slate-700">Backend / Cloud URL (GAS atau VPS)</label>
-                           <button onClick={handleUseVercelProxy} className="text-xs flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"><CloudLightning className="w-3 h-3" /> Gunakan Proxy Vercel</button>
-                      </div>
-                      <div className="relative">
-                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input type="url" className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="URL Google Apps Script atau IP VPS" value={tempSettings.viteGasUrl} onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} />
-                      </div>
-                    </div>
+
                     <div className="pt-4 border-t flex items-center gap-4">
                        <button onClick={handleSaveSettings} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2 transition-all"><Save className="w-4 h-4" /> Simpan Konfigurasi</button>
                        {isSaved && <span className="text-emerald-600 text-sm font-medium flex items-center gap-1 animate-in fade-in"><Check className="w-4 h-4" /> Berhasil disimpan!</span>}
@@ -215,9 +276,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="flex-1 flex flex-col items-center justify-center p-8">
                         <h2 className="text-2xl font-bold mb-8">Pilih Hiburan</h2>
                         <div className="flex gap-8">
-                            {/* Fixed: Replaced undefined enterPlatform with setActivePlatform */}
                             <button onClick={() => setActivePlatform('youtube')} className="p-8 bg-red-600/10 hover:bg-red-600 rounded-2xl border border-red-500/20 transition-all flex flex-col items-center gap-4"><Youtube className="w-12 h-12" /> <span className="font-bold">YouTube</span></button>
-                            {/* Fixed: Replaced undefined enterPlatform with setActivePlatform */}
                             <button onClick={() => setActivePlatform('tiktok')} className="p-8 bg-slate-800 hover:bg-black rounded-2xl border border-slate-700 transition-all flex flex-col items-center gap-4"><Video className="w-12 h-12" /> <span className="font-bold">TikTok</span></button>
                         </div>
                     </div>
