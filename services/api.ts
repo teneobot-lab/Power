@@ -1,5 +1,5 @@
 
-import { InventoryItem, Transaction, Supplier, User, AppSettings } from "../types";
+import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectItem, RejectLog } from "../types";
 
 interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -10,6 +10,8 @@ interface ApiResponse<T> {
 interface FullState {
   inventory: InventoryItem[];
   transactions: Transaction[];
+  reject_inventory: RejectItem[];
+  rejects: RejectLog[];
   suppliers: Supplier[];
   users: User[];
   settings: Partial<AppSettings>;
@@ -20,31 +22,36 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     const url = baseUrl.includes('script.google.com') ? baseUrl : `${cleanBase}/api/data`;
 
+    console.log(`📡 Fetching data from: ${url}`);
+
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
     });
 
+    // Handle HTML response (e.g., 404 Page, Nginx Error, or Proxy Fallback) gracefully
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
-        throw new Error("Server Error: Received HTML instead of JSON.");
+        console.warn(`⚠️ Backend unreachable at ${url} (Received HTML). Switching to Local Mode.`);
+        return null;
     }
 
     if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
+        console.warn(`⚠️ HTTP Error: ${response.status} ${response.statusText}`);
+        return null;
     }
 
     const json: ApiResponse<FullState> = await response.json();
     return (json.status === 'success' && json.data) ? json.data : null;
   } catch (error: any) {
-    console.error("❌ Network Request Failed:", error);
-    throw error;
+    console.warn("⚠️ Offline Mode or Network Error:", error.message);
+    return null;
   }
 };
 
 export const syncBackendData = async (
   baseUrl: string, 
-  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings', 
+  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 
   data: any
 ): Promise<{ success: boolean; message?: string }> => {
   try {
@@ -57,6 +64,11 @@ export const syncBackendData = async (
       body: JSON.stringify({ type, data }),
       headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
     });
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+        return { success: false, message: "Server API not found (HTML response)." };
+    }
 
     if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
     const json = await response.json();

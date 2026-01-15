@@ -1,5 +1,5 @@
 
-import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectLog } from "../types";
+import { InventoryItem, Transaction, Supplier, User, AppSettings, RejectLog, RejectItem } from "../types";
 
 interface ApiResponse<T> {
   status: 'success' | 'error';
@@ -10,7 +10,8 @@ interface ApiResponse<T> {
 interface FullState {
   inventory: InventoryItem[];
   transactions: Transaction[];
-  rejectLogs: RejectLog[];
+  reject_inventory: RejectItem[];
+  rejects: RejectLog[];
   suppliers: Supplier[];
   users: User[];
   settings: Partial<AppSettings>;

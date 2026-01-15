@@ -2,7 +2,6 @@
 import { InventoryItem, Supplier, User, AppSettings, TablePreferences } from './types';
 
 export const INITIAL_INVENTORY: InventoryItem[] = [];
-
 export const INITIAL_SUPPLIERS: Supplier[] = [];
 export const INITIAL_USERS: User[] = [
   {
@@ -16,7 +15,8 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  viteGasUrl: '/', 
+  // Biarkan kosong agar dideteksi sebagai backend lokal
+  viteGasUrl: window.location.origin.includes('localhost') ? 'http://localhost:3000' : window.location.origin, 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: []
