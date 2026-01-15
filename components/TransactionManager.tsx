@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, ArrowRightLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, ImageIcon, Columns, Maximize2, AlertTriangle } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, ArrowRightLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, ImageIcon, Columns, Maximize2, AlertTriangle, Download } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
 interface TransactionManagerProps {
@@ -45,6 +46,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
   const [quantityInput, setQuantityInput] = useState<number | undefined>(undefined);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
   
+  // --- Navigation State ---
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const qtyInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
   // --- Validation State ---
   const [validationError, setValidationError] = useState<string | null>(null);
 
@@ -62,12 +69,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
   
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
   const editSearchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
       if (editSearchRef.current && !editSearchRef.current.contains(event.target as Node)) setIsAutocompleteOpen(false);
       if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) setIsColumnMenuOpen(false);
     };
@@ -103,12 +110,34 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     ).slice(0, 8); 
   }, [debouncedSearchQuery, inventory]);
 
+  // Reset active index when query changes
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [debouncedSearchQuery]);
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (activeIndex >= 0 && listRef.current) {
+      const activeElement = listRef.current.children[activeIndex] as HTMLElement;
+      if (activeElement) {
+         activeElement.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [activeIndex]);
+
+
   const handleSelectItem = (item: InventoryItem) => {
     setSelectedItem(item);
     setSearchQuery(item.name);
     setSelectedUnit(item.baseUnit);
     setIsAutocompleteOpen(false);
     setValidationError(null);
+    setActiveIndex(-1);
+
+    // UX: Auto focus to Quantity input after selection
+    setTimeout(() => {
+        qtyInputRef.current?.focus();
+    }, 50);
   };
 
   const handleAddToCart = (targetCart: 'new' | 'edit') => {
@@ -131,7 +160,51 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     };
     if (targetCart === 'new') setCartItems([...cartItems, newItem]);
     else setEditCartItems([...editCartItems, newItem]);
-    setSelectedItem(null); setSearchQuery(''); setQuantityInput(undefined); setValidationError(null);
+    
+    // Reset and focus back to search for rapid entry
+    setSelectedItem(null); 
+    setSearchQuery(''); 
+    setQuantityInput(undefined); 
+    setValidationError(null);
+    
+    if (targetCart === 'new') {
+        setTimeout(() => {
+            searchInputRef.current?.focus();
+        }, 50);
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (!isAutocompleteOpen || filteredInventory.length === 0) {
+        // If user presses Enter and no list is open but there is an exact match in inventory or they typed something
+        // Logic to try to select the first match automatically could go here, 
+        // but typically we want them to see the list.
+        return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(prev => (prev < filteredInventory.length - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(prev => (prev > 0 ? prev - 1 : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIndex >= 0 && activeIndex < filteredInventory.length) {
+        handleSelectItem(filteredInventory[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsAutocompleteOpen(false);
+    }
+  };
+
+  const handleQtyKeyDown = (e: React.KeyboardEvent, target: 'new' | 'edit') => {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          if (selectedItem && quantityInput && !validationError) {
+              handleAddToCart(target);
+          }
+      }
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'new' | 'edit') => {
@@ -175,9 +248,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     
     // If it's an OUT transaction, validate against inventory
     if (editType === 'OUT' && itemInInv) {
-        // Note: For existing transactions, validating might be tricky since 
-        // the original stock level already changed. 
-        // Simple validation against current stock + original transaction amount if we wanted to be precise.
+        // Simple validation logic
     }
     
     updated[index] = { ...updated[index], quantityInput: newQty, totalBaseQuantity: newQty * (updated[index].conversionRatio || 1) };
@@ -201,6 +272,15 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     setIsEditModalOpen(false);
   };
 
+  const handleDownloadPhoto = (base64Data: string) => {
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = `photo-${Date.now()}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const renderItemInput = (target: 'new' | 'edit', containerRef: React.RefObject<HTMLDivElement | null>) => (
     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -209,19 +289,26 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
+                    ref={target === 'new' ? searchInputRef : undefined}
                     type="text" 
                     value={searchQuery} 
                     onFocus={() => setIsAutocompleteOpen(true)} 
                     onChange={(e) => setSearchQuery(e.target.value)} 
+                    onKeyDown={handleSearchKeyDown}
                     placeholder="Ketik nama atau SKU..." 
-                    className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" 
+                    className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    autoComplete="off" 
                 />
               </div>
               {isAutocompleteOpen && filteredInventory.length > 0 && searchQuery && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-[60] max-h-48 overflow-auto border-slate-200">
-                    {filteredInventory.map(item => (
-                        <button key={item.id} onClick={() => handleSelectItem(item)} className="w-full text-left px-4 py-3 border-b last:border-0 hover:bg-slate-50 transition-colors">
-                            <div className="text-sm font-medium text-slate-800">{item.name}</div>
+                  <div ref={listRef} className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-xl z-[60] max-h-48 overflow-auto border-slate-200">
+                    {filteredInventory.map((item, idx) => (
+                        <button 
+                            key={item.id} 
+                            onClick={() => handleSelectItem(item)} 
+                            className={`w-full text-left px-4 py-3 border-b last:border-0 transition-colors ${idx === activeIndex ? 'bg-blue-50 ring-inset ring-1 ring-blue-200' : 'hover:bg-slate-50'}`}
+                        >
+                            <div className={`text-sm font-medium ${idx === activeIndex ? 'text-blue-800' : 'text-slate-800'}`}>{item.name}</div>
                             <div className="flex justify-between items-center mt-0.5">
                                 <span className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">SKU: {item.sku}</span>
                                 <span className="text-[10px] text-blue-600 font-bold">Stok: {item.quantity} {item.baseUnit}</span>
@@ -236,10 +323,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                 Jumlah {selectedItem && type === 'OUT' && <span className="text-blue-600 lowercase font-normal ml-1">(Tersedia: {selectedItem.quantity})</span>}
               </label>
               <input 
+                ref={target === 'new' ? qtyInputRef : undefined}
                 type="number" 
                 placeholder="Qty" 
                 value={quantityInput ?? ''} 
-                onChange={e => setQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))} 
+                onChange={e => setQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))}
+                onKeyDown={(e) => handleQtyKeyDown(e, target)} 
                 className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none transition-all ${validationError ? 'border-rose-300 ring-rose-100 bg-rose-50 text-rose-700 focus:ring-rose-500' : 'focus:ring-blue-500'}`} 
               />
           </div>
@@ -249,7 +338,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                 disabled={!selectedItem || !quantityInput || !!validationError}
                 className={`w-full py-2 rounded-lg text-sm font-bold shadow-sm transition-all active:scale-[0.98] ${!selectedItem || !quantityInput || !!validationError ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-800 text-white hover:bg-slate-700'}`}
             >
-                Tambah Ke List
+                Tambah (Enter)
             </button>
           </div>
         </div>
@@ -316,7 +405,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                     </div>
                   </div>
                 )}
-                {renderItemInput('new', searchRef)}
+                {renderItemInput('new', searchContainerRef)}
                 <div className="mt-6">
                     <label className="block text-sm font-medium mb-2 text-slate-700">Lampiran Foto (Opsional)</label>
                     <div className="flex flex-wrap gap-2">
@@ -489,7 +578,10 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
       {previewPhoto && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 p-4 animate-in fade-in duration-300" onClick={() => setPreviewPhoto(null)}>
            <div className="relative max-w-full max-h-[90vh]" onClick={e => e.stopPropagation()}>
-               <button onClick={() => setPreviewPhoto(null)} className="absolute -top-12 right-0 text-white hover:text-red-400 bg-white/10 p-2 rounded-full transition-all"><X className="w-8 h-8" /></button>
+               <div className="absolute -top-12 right-0 flex gap-2">
+                 <button onClick={() => handleDownloadPhoto(previewPhoto)} className="text-white hover:text-blue-400 bg-white/10 p-2 rounded-full transition-all" title="Download"><Download className="w-6 h-6" /></button>
+                 <button onClick={() => setPreviewPhoto(null)} className="text-white hover:text-red-400 bg-white/10 p-2 rounded-full transition-all" title="Close"><X className="w-6 h-6" /></button>
+               </div>
                <img src={previewPhoto} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl animate-in zoom-in-95 duration-200" />
            </div>
         </div>
@@ -499,3 +591,4 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 };
 
 export default TransactionManager;
+    

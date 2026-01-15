@@ -76,7 +76,15 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       setAlternativeUnits(item.alternativeUnits || []);
     } else {
       setEditingItem(null);
-      setFormData({ category: '', quantity: 0, minLevel: 0, unitPrice: 0, location: '', name: '', sku: '', baseUnit: 'Pcs', status: 'active' });
+      // Initialize with undefined for numeric fields so they appear empty instead of 0
+      setFormData({ 
+        category: '', 
+        location: '', 
+        name: '', 
+        sku: '', 
+        baseUnit: 'Pcs', 
+        status: 'active' 
+      });
       setAlternativeUnits([]);
     }
     setIsModalOpen(true);
@@ -110,13 +118,28 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   };
 
   const handleDownloadTemplate = () => {
-    // UPDATED: 'First Template' matching the user screenshot for Inventory Master Data
+    // UPDATED: Expanded Template to include all relevant inventory fields
     const data = [
-      ['ID BARANG', 'NAMA BARANG', 'BASE UNIT', 'UNIT2', 'CONVERSION UNIT2', 'UNIT3', 'CONVERSION UNIT3'],
-      ['BRW-000566', 'ABON AYAM', 'KG', 'GR', 1000, '', ''],
-      ['BRW-000833', 'AIR GULA', 'KG', 'GR', 1000, '', ''],
-      ['BRW-000088', 'AIR MINERAL NESTLE 600ML', 'BTL', '', '', '', ''],
-      ['BRW-000842', 'BAKSO AYAM', 'PRS', 'PCS', 3, '', '']
+      [
+        'ID BARANG', 'NAMA BARANG', 'KATEGORI', 'BASE UNIT', 
+        'STOK AWAL', 'HARGA', 'LOKASI', 'MIN STOCK',
+        'UNIT2', 'CONVERSION UNIT2', 'UNIT3', 'CONVERSION UNIT3'
+      ],
+      [
+        'BRW-000566', 'ABON AYAM', 'Bahan Baku', 'KG', 
+        100, 50000, 'Rak A1', 10,
+        'GR', 1000, '', ''
+      ],
+      [
+        'BRW-000833', 'AIR GULA', 'Bahan Baku', 'KG', 
+        50, 12000, 'Rak B2', 5,
+        'GR', 1000, '', ''
+      ],
+      [
+        'BRW-000842', 'BAKSO AYAM', 'Frozen', 'PRS', 
+        200, 25000, 'Freezer 1', 20,
+        'PCS', 3, '', ''
+      ]
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -137,7 +160,6 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         const newItems: InventoryItem[] = data.map((row: any) => {
           const altUnits: UnitDefinition[] = [];
           
-          // Using exact columns from the provided 'First Template' logic
           if (row['UNIT2'] && row['CONVERSION UNIT2']) {
             altUnits.push({ name: String(row['UNIT2']), ratio: Number(row['CONVERSION UNIT2']) });
           }
@@ -147,15 +169,15 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
 
           return {
             id: generateId(),
-            sku: String(row['ID BARANG'] || `SKU-${generateId().slice(0,5)}`),
-            name: String(row['NAMA BARANG'] || 'Item Baru'),
-            baseUnit: String(row['BASE UNIT'] || 'Pcs'),
+            sku: String(row['ID BARANG'] || row['SKU'] || `SKU-${generateId().slice(0,5)}`),
+            name: String(row['NAMA BARANG'] || row['Item Name'] || 'Item Baru'),
+            category: String(row['KATEGORI'] || row['Category'] || 'Master Import'),
+            baseUnit: String(row['BASE UNIT'] || row['Base Unit'] || 'Pcs'),
+            quantity: Number(row['STOK AWAL'] || row['Quantity'] || 0),
+            unitPrice: Number(row['HARGA'] || row['Price'] || 0),
+            location: String(row['LOKASI'] || row['Location'] || ''),
+            minLevel: Number(row['MIN STOCK'] || row['Min Level'] || 0),
             alternativeUnits: altUnits,
-            category: 'Master Import',
-            quantity: 0, // Master data initialization defaults to zero stock
-            minLevel: 0,
-            unitPrice: 0,
-            location: '',
             lastUpdated: new Date().toISOString(),
             status: 'active'
           };
@@ -164,7 +186,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         if (onBatchAdd) onBatchAdd(newItems);
       } catch (error) { 
         console.error(error);
-        alert("Gagal membaca file Excel. Pastikan format kolom sesuai: ID BARANG, NAMA BARANG, BASE UNIT, UNIT2, CONVERSION UNIT2, UNIT3, CONVERSION UNIT3"); 
+        alert("Gagal membaca file Excel. Pastikan format kolom sesuai dengan template."); 
       }
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -329,7 +351,14 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                               </div>
                               <div>
                                   <label className="block text-[10px] font-bold text-blue-600 mb-1 uppercase">Update Stok Fisik ({formData.baseUnit || 'Unit Dasar'})</label>
-                                  <input required type="number" disabled={!canEdit} className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white" value={formData.quantity} onChange={e => setFormData({...formData, quantity: Number(e.target.value)})} />
+                                  <input 
+                                    required 
+                                    type="number" 
+                                    disabled={!canEdit} 
+                                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white" 
+                                    value={formData.quantity ?? ''} 
+                                    onChange={e => setFormData({...formData, quantity: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                                  />
                               </div>
                           </div>
                           
@@ -369,11 +398,23 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Harga Satuan (Rp)</label>
-                              <input type="number" disabled={!canEdit} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:bg-slate-50" value={formData.unitPrice} onChange={e => setFormData({...formData, unitPrice: Number(e.target.value)})} />
+                              <input 
+                                type="number" 
+                                disabled={!canEdit} 
+                                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm disabled:bg-slate-50" 
+                                value={formData.unitPrice ?? ''} 
+                                onChange={e => setFormData({...formData, unitPrice: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                              />
                           </div>
                           <div>
                               <label className="block text-xs font-bold text-slate-500 mb-1 uppercase text-amber-600">Reorder Point</label>
-                              <input type="number" disabled={!canEdit} className="w-full px-3 py-2 border border-amber-200 bg-amber-50/30 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm text-amber-700 disabled:bg-slate-50" value={formData.minLevel} onChange={e => setFormData({...formData, minLevel: Number(e.target.value)})} />
+                              <input 
+                                type="number" 
+                                disabled={!canEdit} 
+                                className="w-full px-3 py-2 border border-amber-200 bg-amber-50/30 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none text-sm text-amber-700 disabled:bg-slate-50" 
+                                value={formData.minLevel ?? ''} 
+                                onChange={e => setFormData({...formData, minLevel: e.target.value === '' ? undefined : Number(e.target.value)})} 
+                              />
                           </div>
                       </div>
 
@@ -390,3 +431,4 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
 };
 
 export default InventoryTable;
+    
