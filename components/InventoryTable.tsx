@@ -110,6 +110,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   };
 
   const handleDownloadTemplate = () => {
+    // UPDATED: 'First Template' matching the user screenshot for Inventory Master Data
     const data = [
       ['ID BARANG', 'NAMA BARANG', 'BASE UNIT', 'UNIT2', 'CONVERSION UNIT2', 'UNIT3', 'CONVERSION UNIT3'],
       ['BRW-000566', 'ABON AYAM', 'KG', 'GR', 1000, '', ''],
@@ -136,6 +137,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
         const newItems: InventoryItem[] = data.map((row: any) => {
           const altUnits: UnitDefinition[] = [];
           
+          // Using exact columns from the provided 'First Template' logic
           if (row['UNIT2'] && row['CONVERSION UNIT2']) {
             altUnits.push({ name: String(row['UNIT2']), ratio: Number(row['CONVERSION UNIT2']) });
           }
@@ -150,7 +152,7 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
             baseUnit: String(row['BASE UNIT'] || 'Pcs'),
             alternativeUnits: altUnits,
             category: 'Master Import',
-            quantity: 0,
+            quantity: 0, // Master data initialization defaults to zero stock
             minLevel: 0,
             unitPrice: 0,
             location: '',
@@ -248,63 +250,45 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
                 const isAlertItem = (item.minLevel || 0) > 0 && item.quantity <= item.minLevel;
                 const isInactive = item.status === 'inactive';
                 return (
-                  <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isInactive ? 'bg-slate-100/60 opacity-60 grayscale-[0.5]' : ''} ${isAlertItem && !isInactive ? 'bg-amber-50/30' : ''}`}>
+                  <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isInactive ? 'bg-slate-50 opacity-60 grayscale-[0.3]' : ''} ${isAlertItem && !isInactive ? 'bg-amber-50/30' : ''}`}>
                     {isVisible('name') && (
                         <td className="px-6 py-4">
                           <div className="flex flex-col">
                             <div className="flex items-center gap-2">
-                              <span className={`font-medium ${isInactive ? 'text-slate-400' : 'text-slate-900'}`}>{item.name}</span> 
-                              {isInactive && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-500 border border-slate-300 uppercase tracking-tight">
-                                  Nonaktif
-                                </span>
-                              )}
+                              <span className={`font-medium ${isInactive ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</span> 
+                              {isInactive && <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded uppercase font-bold">Nonaktif</span>}
                               {isAlertItem && !isInactive && <span title="Stok Rendah!"><AlertTriangle className="w-4 h-4 text-amber-500" /></span>}
                             </div>
                             <span className="text-xs text-slate-400 font-mono">ID: {item.sku}</span>
                           </div>
                         </td>
                     )}
-                    {isVisible('category') && (<td className="px-6 py-4"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${isInactive ? 'bg-slate-50 text-slate-400' : 'bg-slate-100 text-slate-800'}`}>{item.category}</span></td>)}
+                    {isVisible('category') && (<td className="px-6 py-4"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">{item.category}</span></td>)}
                     {isVisible('quantity') && (
                       <td className="px-6 py-4 text-center">
                         <div className="flex flex-col items-center">
-                          <span className={`text-sm font-semibold ${isInactive ? 'text-slate-400' : (isAlertItem ? 'text-amber-600' : 'text-slate-700')}`}>
+                          <span className={`text-sm font-semibold ${isAlertItem && !isInactive ? 'text-amber-600' : 'text-slate-700'}`}>
                             {item.quantity} {item.baseUnit}
                           </span>
                           {item.alternativeUnits && item.alternativeUnits.length > 0 && (
                               <div className="text-[10px] text-slate-400 flex flex-wrap justify-center gap-1 mt-0.5">
                                   {item.alternativeUnits.map((u, i) => (
-                                      <span key={i} className={`px-1 rounded border border-slate-100 whitespace-nowrap ${isInactive ? 'bg-slate-50' : 'bg-white'}`}>1 {u.name} = {u.ratio} {item.baseUnit}</span>
+                                      <span key={i} className="bg-slate-50 px-1 rounded border border-slate-100 whitespace-nowrap">1 {u.name} = {u.ratio} {item.baseUnit}</span>
                                   ))}
                               </div>
                           )}
                         </div>
                       </td>
                     )}
-                    {isVisible('price') && (<td className="px-6 py-4 text-right font-medium text-slate-400">{formatCurrency(item.unitPrice)}</td>)}
-                    {isVisible('location') && <td className="px-6 py-4 text-center text-sm text-slate-400">{item.location || '-'}</td>}
+                    {isVisible('price') && (<td className="px-6 py-4 text-right font-medium text-slate-600">{formatCurrency(item.unitPrice)}</td>)}
+                    {isVisible('location') && <td className="px-6 py-4 text-center text-sm text-slate-500">{item.location || '-'}</td>}
                     <td className="px-6 py-4">
                       <div className="flex justify-end gap-1">
                         {canEdit ? (
                             <>
-                                <button onClick={() => handleToggleStatus(item)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors" title={isInactive ? "Aktifkan" : "Nonaktifkan"}><Power className="w-4 h-4" /></button>
-                                <button 
-                                  disabled={isInactive} 
-                                  onClick={() => handleOpenModal(item)} 
-                                  className={`p-2 rounded-full transition-colors ${isInactive ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`} 
-                                  title={isInactive ? "Aktifkan untuk mengedit" : "Edit"}
-                                >
-                                  <Edit2 className="w-4 h-4" />
-                                </button>
-                                <button 
-                                  disabled={isInactive} 
-                                  onClick={() => handleDelete(item)} 
-                                  className={`p-2 rounded-full transition-colors ${isInactive ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-red-600 hover:bg-red-50'}`} 
-                                  title={isInactive ? "Aktifkan untuk menghapus" : "Hapus"}
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <button onClick={() => handleToggleStatus(item)} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full" title={isInactive ? "Aktifkan" : "Nonaktifkan"}><Power className="w-4 h-4" /></button>
+                                <button onClick={() => handleOpenModal(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full" title="Edit"><Edit2 className="w-4 h-4" /></button>
+                                <button onClick={() => handleDelete(item)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full" title="Hapus"><Trash2 className="w-4 h-4" /></button>
                             </>
                         ) : <button onClick={() => handleOpenModal(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full" title="Detail"><Eye className="w-4 h-4" /></button>}
                       </div>

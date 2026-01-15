@@ -19,7 +19,7 @@ import { LayoutDashboard, Package, Bot, Boxes, ArrowRightLeft, History, RefreshC
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [rejectItems, setRejectItems] = useState<RejectItem[]>([]);
+  const [rejectItems, setRejectItems] = useState<RejectItem[]>([]); // NEW: Reject Master Data
   const [rejectLogs, setRejectLogs] = useState<RejectLog[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -193,7 +193,7 @@ const App: React.FC = () => {
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col shadow-xl transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex items-center justify-between text-white">
-          <div className="flex items-center gap-3"><div className="bg-blue-600 p-2 rounded-lg"><Boxes className="w-6 h-6" /></div><span className="text-xl font-bold tracking-tight">POWER INVENTORY</span></div>
+          <div className="flex items-center gap-3"><div className="bg-blue-600 p-2 rounded-lg"><Boxes className="w-6 h-6" /></div><span className="text-xl font-bold tracking-tight">SmartStock</span></div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           <button onClick={() => setCurrentView(AppView.DASHBOARD)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${currentView === AppView.DASHBOARD ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5" /><span className="font-medium">Dashboard</span></button>
@@ -213,7 +213,7 @@ const App: React.FC = () => {
       </aside>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         <header className="hidden md:flex justify-between items-center p-8 pb-4 shrink-0 bg-slate-50 z-20">
-            <div><h1 className="text-2xl font-bold text-slate-900">Gudang POWER</h1><p className="text-slate-500 text-sm mt-1">Sistem Manajemen Inventori Real-time</p></div>
+            <div><h1 className="text-2xl font-bold text-slate-900">Gudang SmartStock</h1><p className="text-slate-500 text-sm mt-1">Sistem Manajemen Inventori Real-time</p></div>
             <div className="flex items-center gap-3">
                 {settings.viteGasUrl && (
                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>

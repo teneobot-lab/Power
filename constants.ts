@@ -16,8 +16,7 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  // Mengarahkan langsung ke IP VPS sesuai permintaan
-  viteGasUrl: 'http://165.22.251.42:3000', 
+  viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: []
