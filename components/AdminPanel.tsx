@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from '../types';
 import { generateId } from '../utils/storageUtils';
 import { checkServerConnection } from '../services/api';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2, Wrench } from 'lucide-react';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2, Wrench, Command } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -140,6 +140,24 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   // --- SERVER CODE CONSTANTS ---
+  const vpsSetupCmd = `# 1. Update Server
+sudo apt update && sudo apt upgrade -y
+
+# 2. Install Curl & Git
+sudo apt install -y curl git unzip
+
+# 3. Install Node.js 18 (Standard LTS)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# 4. Install MySQL Server
+sudo apt install -y mysql-server
+sudo mysql_secure_installation
+
+# 5. Cek Versi
+node -v
+mysql --version`;
+
   const packageJsonCode = `{
   "name": "smartstock-backend",
   "version": "1.0.0",
@@ -486,20 +504,35 @@ initDb();`;
                         Inisialisasi VPS Baru (Perbaikan 404)
                     </h2>
                     <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                        Jika Anda mengalami <strong>Error 404</strong> pada terminal, itu berarti kode server (index.js) di VPS Anda belum mendukung fitur ini. 
-                        Silakan update file <strong>index.js</strong> dengan kode di bawah ini.
+                        Ikuti langkah berikut untuk memigrasikan backend ke server VPS baru Anda. 
                     </p>
 
                     <div className="space-y-12">
-                        {/* Step 1: Install Dependencies */}
+                        {/* Step 0: VPS SETUP COMMANDS */}
                         <section>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <Command className="w-4 h-4 text-emerald-500" /> Langkah 0: Persiapan System VPS
+                                </h3>
+                                <button onClick={() => copyToClipboard(vpsSetupCmd)} className="text-[10px] bg-slate-900 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-slate-800 flex items-center gap-1.5">
+                                    <Copy className="w-3.5 h-3.5" /> Salin Command Setup
+                                </button>
+                            </div>
+                            <div className="p-5 bg-slate-900 rounded-xl border border-slate-800">
+                                <p className="text-[10px] text-slate-500 mb-3 font-mono"># Jalankan perintah ini di terminal VPS baru Anda untuk menginstall Node.js & MySQL</p>
+                                <pre className="text-emerald-400 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{vpsSetupCmd}</pre>
+                            </div>
+                        </section>
+
+                        {/* Step 1: Install Dependencies */}
+                        <section className="pt-8 border-t">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <Cpu className="w-4 h-4" /> Langkah 1: Persiapan Folder di VPS
+                                <Cpu className="w-4 h-4" /> Langkah 1: Persiapan Folder
                             </h3>
                             <div className="p-5 bg-slate-900 rounded-xl space-y-3">
-                                <div className="text-[10px] text-slate-500 font-mono mb-1"># Jalankan di Terminal SSH VPS</div>
+                                <div className="text-[10px] text-slate-500 font-mono mb-1"># Buat folder baru di VPS</div>
                                 <code className="block text-emerald-400 text-xs font-mono leading-relaxed">
-                                    mkdir server && cd server<br/>
+                                    mkdir smartstock && cd smartstock<br/>
                                     npm init -y
                                 </code>
                             </div>
