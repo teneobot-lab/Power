@@ -47,6 +47,29 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
   }
 };
 
+export const loginUser = async (baseUrl: string, username: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
+    try {
+        const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+        const url = `${cleanBase}/api/login`;
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const json = await response.json();
+
+        if (response.ok && json.status === 'success') {
+            return { success: true, user: json.data };
+        } else {
+            return { success: false, message: json.message || 'Login gagal' };
+        }
+    } catch (error: any) {
+        return { success: false, message: 'Gagal terhubung ke server (Network Error)' };
+    }
+};
+
 export const syncBackendData = async (
   baseUrl: string, 
   type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 

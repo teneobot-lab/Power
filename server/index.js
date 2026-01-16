@@ -3,7 +3,8 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { exec } = require('child_process'); // Modul untuk menjalankan perintah shell
+const { exec } = require('child_process');
+const crypto = require('crypto'); // Built-in Node module
 require('dotenv').config();
 
 const app = express();
@@ -68,6 +69,35 @@ const checkDb = (req, res, next) => {
     next();
 };
 
+// --- AUTH ENDPOINT (NEW) ---
+app.post('/api/login', checkDb, async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+        if (rows.length === 0) return res.status(401).json({ status: 'error', message: 'Username tidak ditemukan' });
+
+        const user = rows[0];
+        
+        // 1. Cek Plain Text (Jika user dibuat manual di database tanpa hash)
+        if (user.password === password) {
+            // Opsional: Update ke hash agar lebih aman kedepannya
+            // const newHash = crypto.createHash('sha256').update(password).digest('hex');
+            // await pool.query('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
+            return res.json({ status: 'success', data: toCamel(user) });
+        }
+
+        // 2. Cek Hash (SHA-256)
+        const hash = crypto.createHash('sha256').update(password).digest('hex');
+        if (user.password === hash) {
+            return res.json({ status: 'success', data: toCamel(user) });
+        }
+
+        res.status(401).json({ status: 'error', message: 'Password salah' });
+    } catch (e) {
+        res.status(500).json({ status: 'error', message: e.message });
+    }
+});
+
 // --- SYSTEM TERMINAL ENDPOINT ---
 app.post('/api/terminal', async (req, res) => {
     const { command } = req.body;
@@ -107,14 +137,6 @@ app.get('/api/data', checkDb, async (req, res) => {
              const defaultAdminSql = "INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', ?, 'admin', 'active', NOW())";
              await pool.query(defaultAdminSql, [ADMIN_HASH]);
              [usr] = await pool.query('SELECT * FROM users'); // Re-fetch
-        } else {
-             // AUTO-FIX: Cek jika ada user admin yang passwordnya masih 'admin22' (Plain Text) dan ubah ke Hash
-             const adminUser = usr.find(u => u.username === 'admin');
-             if (adminUser && adminUser.password === 'admin22') {
-                 console.log("⚠️ Mendeteksi password admin belum di-hash. Memperbaiki otomatis...");
-                 await pool.query('UPDATE users SET password = ? WHERE username = ?', [ADMIN_HASH, 'admin']);
-                 [usr] = await pool.query('SELECT * FROM users'); // Re-fetch
-             }
         }
 
         const [setRows] = await pool.query('SELECT * FROM settings');

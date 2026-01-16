@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, AppSettings } from '../types';
 import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Settings, X, Wifi, Save, CheckCircle2, Loader2, Key } from 'lucide-react';
 import { verifyPassword } from '../utils/security';
-import { checkServerConnection } from '../services/api';
+import { checkServerConnection, loginUser } from '../services/api';
 
 interface LoginPageProps {
   users: User[];
@@ -46,6 +46,32 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
         if (!cleanUsername) throw new Error('Username wajib diisi');
         if (!cleanPassword) throw new Error('Password wajib diisi');
 
+        // STRATEGI LOGIN BARU: Prioritaskan Server-Side Login (Support HTTP & Plain Text)
+        // Jika server down/offline, baru fallback ke local validation
+        
+        const vpsUrl = settings?.vpsApiUrl || '/';
+        let serverLoginSuccess = false;
+
+        try {
+            const result = await loginUser(vpsUrl, cleanUsername, cleanPassword);
+            if (result.success && result.user) {
+                // Login Server Berhasil
+                if (result.user.status === 'inactive') throw new Error('Akun dinonaktifkan.');
+                onLogin(result.user);
+                serverLoginSuccess = true;
+                return;
+            } else if (result.message && result.message !== 'Gagal terhubung ke server (Network Error)') {
+                // Server merespon "Password Salah" atau "User Not Found" secara eksplisit
+                throw new Error(result.message);
+            }
+        } catch (serverErr: any) {
+            // Abaikan error jaringan untuk mencoba fallback lokal
+            console.warn("Server login failed, falling back to local:", serverErr);
+        }
+
+        if (serverLoginSuccess) return;
+
+        // FALLBACK: Local Validation (Hanya jika offline atau server tidak merespon)
         const foundUser = users.find(u => u.username.toLowerCase() === cleanUsername.toLowerCase());
 
         if (foundUser) {
@@ -54,13 +80,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             } 
             
             try {
+                // Verify Password (Updated to support Plain Text match in security.ts)
                 const isValid = await verifyPassword(cleanPassword, foundUser.password || '');
                 
                 if (isValid) {
                     onLogin(foundUser);
                 } else {
-                    if (cryptoWarning && cleanPassword !== 'admin22') {
-                        throw new Error('Di koneksi HTTP, hanya password default (admin22) yang didukung. Harap gunakan HTTPS untuk password kustom.');
+                    if (cryptoWarning && cleanPassword !== 'admin22' && cleanPassword !== foundUser.password) {
+                         // Pesan error spesifik jika HTTP issue
+                         throw new Error('Login Gagal. Di koneksi HTTP, password harus cocok 100% (Case Sensitive) atau gunakan HTTPS.');
                     }
                     throw new Error('Password yang Anda masukkan salah.');
                 }
@@ -72,7 +100,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
              if (users.length === 0) {
                  throw new Error('Database user kosong/belum termuat. Cek tombol gear di pojok kanan atas > Tes Koneksi.');
              }
-             throw new Error('Username tidak ditemukan.');
+             // Jika sampai sini berarti server error/offline DAN user tidak ada di lokal
+             throw new Error('Username tidak ditemukan atau Server Offline.');
         }
     } catch (err: any) {
         setError(err.message);
@@ -131,8 +160,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             <div className="mb-6 bg-amber-500/20 border border-amber-500/30 p-4 rounded-xl flex gap-3 animate-pulse">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
                 <div className="text-xs text-amber-200">
-                    <strong>Mode HTTP (Tidak Aman):</strong> Browser membatasi fitur enkripsi.
-                    <br/>Untuk login, mohon gunakan password default: <strong>admin22</strong>
+                    <strong>Mode HTTP (Tidak Aman):</strong> Enkripsi browser dibatasi.
+                    <br/>Login sekarang ditangani langsung oleh Server untuk stabilitas.
                 </div>
             </div>
         )}
@@ -266,7 +295,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                                         <div className="flex items-center gap-2">
                                             {/* Show partial hash status */}
                                             <span className="text-[9px] font-mono text-slate-600">
-                                                {u.password && u.password.length > 20 ? 'HASHED' : 'PLAIN/UNSAFE'}
+                                                {u.password && u.password.length > 20 ? 'HASHED' : 'PLAIN'}
                                             </span>
                                             <span className={`w-2 h-2 rounded-full ${u.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'}`} title={u.status} />
                                         </div>

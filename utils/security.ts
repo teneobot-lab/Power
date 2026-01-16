@@ -24,29 +24,26 @@ export const hashPassword = async (password: string): Promise<string> => {
 
 /**
  * Memverifikasi password input dengan hash yang tersimpan
- * Termasuk fallback untuk koneksi HTTP non-secure
+ * Termasuk fallback untuk koneksi HTTP non-secure dan Plain Text legacy
  */
 export const verifyPassword = async (inputPassword: string, storedHash: string): Promise<boolean> => {
-  // 1. Coba metode standar (Web Crypto API)
+  // 1. Cek Plain Text (Fallback utama jika database diisi manual tanpa hash)
+  if (inputPassword === storedHash) return true;
+
+  // 2. Cek Hash (Web Crypto API - HTTPS/Localhost only)
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
       const inputHash = await hashPassword(inputPassword);
       return inputHash === storedHash;
     }
   } catch (e) {
-    // Lanjut ke fallback jika crypto.subtle gagal/tidak ada
-    console.warn("Crypto API not available, trying fallback verification.");
+    // Silent fail if crypto not available
   }
 
-  // 2. FALLBACK MANUAL UNTUK HTTP/IP ADDRESS
-  // Jika browser memblokir crypto API (karena akses via IP/HTTP), kita cek manual
-  // khusus untuk password default 'admin22' agar user tidak terkunci.
-  
+  // 3. Fallback khusus admin22 jika di HTTP
   if (inputPassword === 'admin22' && storedHash === ADMIN22_HASH) {
       return true;
   }
 
-  // Jika password bukan admin22 dan kita di HTTP, kita tidak bisa memverifikasi secara aman.
-  // User harus menggunakan HTTPS atau password default.
   return false;
 };
