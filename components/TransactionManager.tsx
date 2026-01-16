@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, Transaction, TransactionItemDetail, TransactionType, UserRole, Supplier, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, ArrowRightLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, ImageIcon, Columns, Maximize2, AlertTriangle, Download } from 'lucide-react';
+import { Calendar, Plus, Save, Trash2, ArrowUpRight, ArrowDownLeft, ArrowRightLeft, Search, Package, Check, X, Edit3, AlertCircle, ShieldAlert, FileText, Camera, ImageIcon, Columns, Maximize2, AlertTriangle, Download, PlusCircle, MinusCircle, Eye } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 
 interface TransactionManagerProps {
@@ -29,6 +29,9 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
   
   useEffect(() => { if (!canEdit) setActiveTab('history'); }, [canEdit]);
   
+  // Utility class untuk menyembunyikan spinner pada input number
+  const noSpinnerClass = "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
+
   // --- New Transaction Form State ---
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [type, setType] = useState<TransactionType>('IN');
@@ -328,11 +331,12 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
               <input 
                 ref={target === 'new' ? qtyInputRef : undefined}
                 type="number" 
+                step="any"
                 placeholder="Qty (Enter)" 
                 value={quantityInput ?? ''} 
                 onChange={e => setQuantityInput(e.target.value === '' ? undefined : Number(e.target.value))}
                 onKeyDown={(e) => handleQtyKeyDown(e, target)} 
-                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none transition-all ${validationError ? 'border-rose-300 ring-rose-100 bg-rose-50 text-rose-700 focus:ring-rose-500' : 'focus:ring-blue-500'}`} 
+                className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 outline-none transition-all ${noSpinnerClass} ${validationError ? 'border-rose-300 ring-rose-100 bg-rose-50 text-rose-700 focus:ring-rose-500' : 'focus:ring-blue-500'}`} 
               />
           </div>
           <div className="md:col-span-3">
@@ -392,10 +396,22 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-slate-700">Jenis Transaksi</label>
-                    <div className="flex bg-slate-100 p-1 rounded-lg h-[38px]">
-                      <button onClick={() => { setType('IN'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG MASUK</button>
-                      <button onClick={() => { setType('OUT'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} className={`flex-1 py-1 rounded-md text-xs font-bold transition-all ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>BARANG KELUAR</button>
+                    <label className="block text-sm font-medium mb-1 text-slate-700 text-center">Jenis Transaksi</label>
+                    <div className="flex bg-slate-100 p-1 rounded-lg h-[42px] gap-1">
+                      <button 
+                        onClick={() => { setType('IN'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} 
+                        className={`flex-1 flex items-center justify-center rounded-md transition-all ${type === 'IN' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        title="Barang Masuk"
+                      >
+                        <PlusCircle className="w-6 h-6" />
+                      </button>
+                      <button 
+                        onClick={() => { setType('OUT'); setValidationError(null); requestAnimationFrame(() => searchInputRef.current?.focus()); }} 
+                        className={`flex-1 flex items-center justify-center rounded-md transition-all ${type === 'OUT' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        title="Barang Keluar"
+                      >
+                        <MinusCircle className="w-6 h-6" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -427,13 +443,15 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                 </div>
               </div>
            </div>
-           <div className="lg:col-span-1">
+           <div className="lg:col-span-1 h-full min-h-[500px]">
               <div className="bg-white rounded-xl border p-4 space-y-4 flex flex-col h-full shadow-sm">
-                <div className="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
-                    <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm"><Package className="w-4 h-4 text-blue-600" /> Item di Keranjang</h3>
-                        <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold">{cartItems.length} ITEMS</span>
-                    </div>
+                <div className="flex items-center justify-between flex-shrink-0">
+                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-sm"><Package className="w-4 h-4 text-blue-600" /> Item di Keranjang</h3>
+                    <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-bold">{cartItems.length} ITEMS</span>
+                </div>
+                
+                {/* Fixed height and scrollable area for cart */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 max-h-[450px]">
                     {cartItems.length > 0 ? (
                         <div className="space-y-2">
                             {cartItems.map((it, i) => (
@@ -447,13 +465,14 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                             ))}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center py-12 text-slate-300">
+                        <div className="flex flex-col items-center justify-center py-20 text-slate-300">
                             <Package className="w-12 h-12 mb-2 opacity-10" />
                             <p className="text-xs italic font-medium">Belum ada item ditambahkan</p>
                         </div>
                     )}
                 </div>
-                <div className="pt-4 border-t border-slate-100 space-y-4">
+                
+                <div className="pt-4 border-t border-slate-100 space-y-4 flex-shrink-0">
                     <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Catatan tambahan untuk transaksi ini..." className="w-full p-3 border rounded-lg text-xs resize-none h-20 outline-none focus:ring-2 focus:ring-blue-500 transition-all bg-slate-50/50" />
                     <button onClick={handleSubmitTransaction} disabled={cartItems.length === 0} className="w-full py-3 bg-blue-600 text-white rounded-lg font-bold disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-[0.98]">SUBMIT TRANSAKSI</button>
                 </div>
@@ -484,7 +503,13 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                             {isVisible('notes') && <td className="px-6 py-4 max-w-[150px] truncate italic text-slate-400">{tx.notes || '-'}</td>}
                             <td className="px-6 py-4 text-right">
                               <div className="flex justify-end gap-2">
-                                <button onClick={() => openEditModal(tx)} className="text-blue-600 font-bold hover:bg-blue-50 px-3 py-1 rounded-lg transition-all">{canEdit ? 'Edit' : 'Detail'}</button>
+                                <button 
+                                  onClick={() => openEditModal(tx)} 
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                  title={canEdit ? 'Edit Transaksi' : 'Detail Transaksi'}
+                                >
+                                  {canEdit ? <Edit3 className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                </button>
                                 {canEdit && (
                                   <button 
                                     onClick={() => { if(window.confirm('Hapus transaksi ini dari riwayat?')) onDeleteTransaction(tx.id); }} 
@@ -509,7 +534,7 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="px-6 py-4 border-b bg-slate-50 flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    <Edit3 className="w-5 h-5 text-blue-600" />
+                    {canEdit ? <Edit3 className="w-5 h-5 text-blue-600" /> : <Eye className="w-5 h-5 text-blue-600" />}
                     <h3 className="font-bold text-slate-800">{canEdit ? 'Ubah Transaksi' : 'Detail Transaksi'}</h3>
                   </div>
                   <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
@@ -547,7 +572,13 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                                </div>
                                <div className="flex items-center gap-2">
                                   {canEdit ? (
-                                    <input type="number" className="w-16 border border-blue-200 rounded-lg text-center py-1.5 font-bold bg-blue-50 text-blue-700 outline-none focus:ring-2 focus:ring-blue-500" value={it.quantityInput} onChange={e => updateEditItemQty(i, Number(e.target.value))} />
+                                    <input 
+                                      type="number" 
+                                      step="any"
+                                      className={`w-16 border border-blue-200 rounded-lg text-center py-1.5 font-bold bg-blue-50 text-blue-700 outline-none focus:ring-2 focus:ring-blue-500 ${noSpinnerClass}`} 
+                                      value={it.quantityInput} 
+                                      onChange={e => updateEditItemQty(i, Number(e.target.value))} 
+                                    />
                                   ) : <span className="font-bold px-3 py-1.5 bg-slate-100 rounded-lg">{it.quantityInput}</span>}
                                   <span className="text-slate-500 font-bold uppercase">{it.selectedUnit}</span>
                                </div>
