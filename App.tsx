@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InventoryItem, AppView, Transaction, Supplier, User, AppSettings, ToastMessage, ToastType, TablePreferences, RejectLog, RejectItem } from './types';
 import { INITIAL_INVENTORY, INITIAL_SUPPLIERS, INITIAL_USERS, DEFAULT_SETTINGS, DEFAULT_TABLE_PREFS } from './constants';
 import { loadFromStorage, saveToStorage, clearStorage } from './utils/storageUtils';
-import { fetchBackendData, syncBackendData } from './services/api';
+import { fetchBackendData, syncBackendData, checkServerConnection } from './services/api';
 import useDebounce from './hooks/useDebounce';
 import Dashboard from './components/Dashboard';
 import InventoryTable from './components/InventoryTable';
@@ -67,21 +67,28 @@ const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (targetUrl?: string) => {
     setIsLoading(true);
+    const activeUrl = targetUrl || settings.viteGasUrl;
+    
     try {
+      // 1. Muat data lokal dulu (sebagai fallback)
       const localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
-      setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
-      setTransactions(loadFromStorage('smartstock_transactions', []));
-      setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
-      setRejectLogs(loadFromStorage('smartstock_rejects', []));
-      setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
-      setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
-      setSettings(localSettings);
+      if (!targetUrl) {
+          setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
+          setTransactions(loadFromStorage('smartstock_transactions', []));
+          setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
+          setRejectLogs(loadFromStorage('smartstock_rejects', []));
+          setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
+          setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
+          setSettings(localSettings);
+      }
 
-      if (localSettings.viteGasUrl && localSettings.viteGasUrl !== '/') {
-        try {
-          const cloudData = await fetchBackendData(localSettings.viteGasUrl);
+      // 2. Cek Koneksi Cloud/VPS
+      if (activeUrl && activeUrl.length > 0) {
+        const conn = await checkServerConnection(activeUrl);
+        if (conn.online) {
+          const cloudData = await fetchBackendData(activeUrl);
           if (cloudData) {
             setItems(cloudData.inventory || []);
             setTransactions(cloudData.transactions || []);
@@ -89,28 +96,44 @@ const App: React.FC = () => {
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
             setUsers(cloudData.users || []);
-            setSettings(prev => ({ ...prev, ...cloudData.settings }));
+            // Jangan timpa URL itu sendiri saat sync settings dari cloud jika sedang tes
+            if (!targetUrl) setSettings(prev => ({ ...prev, ...cloudData.settings }));
+            
             setIsCloudConnected(true);
-            showToast('Cloud data sinkron', 'success');
+            showToast('Sistem Terhubung ke Cloud/VPS', 'success');
+          } else {
+            setIsCloudConnected(false);
           }
-        } catch (e) {
+        } else {
           setIsCloudConnected(false);
         }
+      } else {
+        setIsCloudConnected(false);
       }
     } catch (error) {
-      showToast('Gagal memuat data', 'error');
+      console.error(error);
+      setIsCloudConnected(false);
+      showToast('Gagal memuat data cloud, beralih ke mode lokal', 'warning');
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, [settings.viteGasUrl, showToast]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // Jalankan saat startup
+  useEffect(() => { loadData(); }, []);
+
+  // Tambahkan pemicu: Jika settings.viteGasUrl berubah (setelah klik simpan), paksa panggil loadData
+  const handleUpdateSettings = (newSettings: AppSettings) => {
+      setSettings(newSettings);
+      // Jika URL berubah, panggil loadData dengan URL baru untuk verifikasi status cloud
+      loadData(newSettings.viteGasUrl);
+  };
 
   const isMounted = useRef(false);
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.viteGasUrl && settings.viteGasUrl !== '/') {
+    if (isMounted.current && isCloudConnected && settings.viteGasUrl) {
       setIsSaving(true);
       await syncBackendData(settings.viteGasUrl, type as any, data);
       setIsSaving(false);
@@ -202,9 +225,12 @@ const App: React.FC = () => {
                 <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm mt-1">Sistem Manajemen Gudang (VPS + Cloud Enabled)</p></div>
             </div>
             <div className="flex items-center gap-3">
-                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>{isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}{isCloudConnected ? 'Cloud Active' : 'Local Mode'}</div>
+                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                    {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                    {isCloudConnected ? 'Cloud Active' : 'Local Mode'}
+                </div>
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
-                <button onClick={loadData} className="p-2 text-slate-500 hover:text-blue-600 rounded-full"><RefreshCw className="w-5 h-5" /></button>
+                <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full"><RefreshCw className="w-5 h-5" /></button>
             </div>
         </header>
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
@@ -220,7 +246,16 @@ const App: React.FC = () => {
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
             {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={defaultRole} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
-            {currentView === AppView.ADMIN && <AdminPanel settings={settings} onUpdateSettings={setSettings} users={users} onAddUser={() => {}} onUpdateUser={() => {}} onDeleteUser={() => {}} />}
+            {currentView === AppView.ADMIN && (
+                <AdminPanel 
+                    settings={settings} 
+                    onUpdateSettings={handleUpdateSettings} 
+                    users={users} 
+                    onAddUser={() => {}} 
+                    onUpdateUser={() => {}} 
+                    onDeleteUser={() => {}} 
+                />
+            )}
         </div>
       </div>
     </div>
