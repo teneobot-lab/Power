@@ -339,12 +339,39 @@ const RejectManager: React.FC<RejectManagerProps> = ({
     reader.readAsBinaryString(file);
   };
 
-  // Fix: Added handleCopyToClipboard to fix missing name error.
+  /**
+   * handleCopyToClipboard
+   * Format: ##Data Reject KKL (DDMMYY)##
+   * List: • ItemName - Qty Unit (Reason)
+   */
   const handleCopyToClipboard = (log: RejectLog) => {
-    const itemsText = log.items.map(it => `- ${it.itemName}: ${it.quantity} ${it.unit} (${it.reason})`).join('\n');
-    const text = `REJECT LOG [${log.date}]\n----------------\n${itemsText}\n----------------\nNotes: ${log.notes || '-'}`;
+    // 1. Format date to DDMMYY
+    // Assumes log.date format is YYYY-MM-DD
+    let ddmmyy = '';
+    try {
+        const parts = log.date.split('-');
+        if (parts.length === 3) {
+            const y = parts[0].slice(-2); // YY
+            const m = parts[1]; // MM
+            const d = parts[2]; // DD
+            ddmmyy = `${d}${m}${y}`;
+        } else {
+            // Fallback to current date if format unexpected
+            const now = new Date();
+            const d = String(now.getDate()).padStart(2, '0');
+            const m = String(now.getMonth() + 1).padStart(2, '0');
+            const y = String(now.getFullYear()).slice(-2);
+            ddmmyy = `${d}${m}${y}`;
+        }
+    } catch (e) {
+        ddmmyy = 'INVALID_DATE';
+    }
+
+    const header = `##Data Reject KKL (${ddmmyy})##`;
+    const itemsText = log.items.map(it => `• ${it.itemName} - ${it.quantity} ${it.unit} (${it.reason})`).join('\n');
+    const finalContent = `${header}\n${itemsText}`;
     
-    navigator.clipboard.writeText(text).then(() => {
+    navigator.clipboard.writeText(finalContent).then(() => {
         alert("Log detail berhasil disalin ke clipboard!");
     }).catch(err => {
         console.error('Gagal menyalin:', err);
