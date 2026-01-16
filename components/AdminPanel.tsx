@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from '../types';
 import { generateId } from '../utils/storageUtils';
 import { checkServerConnection } from '../services/api';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2, Wrench, Command } from 'lucide-react';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2, Wrench, Command, Key } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -152,11 +152,33 @@ sudo apt install -y nodejs
 
 # 4. Install MySQL Server
 sudo apt install -y mysql-server
-sudo mysql_secure_installation
+# (Opsional: sudo mysql_secure_installation)
 
 # 5. Cek Versi
 node -v
 mysql --version`;
+
+  // Fix: Gunakan 127.0.0.1 untuk menghindari error ::1 (IPv6)
+  const envCode = `DB_HOST=127.0.0.1
+DB_USER=smartstock_user
+DB_PASSWORD=smartstock_password
+DB_NAME=smartstock_db
+PORT=3000`;
+
+  const mysqlUserSetupCmd = `# Masuk ke MySQL sebagai root (tanpa password)
+sudo mysql -u root
+
+# (Di dalam prompt MySQL, jalankan baris per baris):
+
+-- 1. Buat User Baru (Lebih aman daripada pakai root)
+CREATE USER 'smartstock_user'@'localhost' IDENTIFIED BY 'smartstock_password';
+
+-- 2. Beri Hak Akses Penuh
+GRANT ALL PRIVILEGES ON *.* TO 'smartstock_user'@'localhost' WITH GRANT OPTION;
+
+-- 3. Terapkan
+FLUSH PRIVILEGES;
+EXIT;`;
 
   const packageJsonCode = `{
   "name": "smartstock-backend",
@@ -174,12 +196,6 @@ mysql --version`;
     "body-parser": "^1.20.2"
   }
 }`;
-
-  const envCode = `DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=your_password
-DB_NAME=smartstock_db
-PORT=3000`;
 
   const setupDbCode = `require('dotenv').config();
 const mysql = require('mysql2/promise');
@@ -203,16 +219,25 @@ async function setupDatabase() {
         \`CREATE TABLE IF NOT EXISTS settings (setting_key VARCHAR(100) PRIMARY KEY, setting_value LONGTEXT)\`
     ];
     try {
-        const connection = await mysql.createConnection(config);
+        // Coba koneksi awal (tanpa DB) untuk create DB
+        const connection = await mysql.createConnection({ ...config, database: undefined });
         await connection.query(\`CREATE DATABASE IF NOT EXISTS \${dbName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci\`);
-        await connection.query(\`USE \${dbName}\`);
-        console.log('📂 Membuat tabel-tabel...');
-        for (const sql of tables) { await connection.query(sql); }
-        await connection.query("INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', 'admin22', 'admin', 'active', NOW())");
-        console.log('✅ Database berhasil dikonfigurasi!');
         await connection.end();
+
+        // Koneksi ulang dengan DB
+        const dbConnection = await mysql.createConnection({ ...config, database: dbName });
+        console.log('📂 Membuat tabel-tabel...');
+        for (const sql of tables) { await dbConnection.query(sql); }
+        await dbConnection.query("INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', 'admin22', 'admin', 'active', NOW())");
+        console.log('✅ Database berhasil dikonfigurasi!');
+        await dbConnection.end();
         process.exit(0);
-    } catch (error) { console.error('❌ Gagal Setup DB:', error.message); process.exit(1); }
+    } catch (error) { 
+        console.error('❌ Gagal Setup DB:', error.message); 
+        console.error('👉 TIP: Jika error ECONNREFUSED ::1, pastikan DB_HOST di .env adalah 127.0.0.1 bukan localhost');
+        console.error('👉 TIP: Jika error ACCESS DENIED, pastikan user database sudah dibuat (Langkah 1.5 di Admin Panel)');
+        process.exit(1); 
+    }
 }
 setupDatabase();`;
 
@@ -230,7 +255,7 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
 const dbConfig = {
-    host: process.env.DB_HOST,
+    host: process.env.DB_HOST || '127.0.0.1',
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD, 
     database: process.env.DB_NAME,
@@ -501,10 +526,10 @@ initDb();`;
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                     <h2 className="text-xl font-extrabold text-slate-800 mb-4 flex items-center gap-3">
                         <ServerCrash className="w-7 h-7 text-amber-600" /> 
-                        Inisialisasi VPS Baru (Perbaikan 404)
+                        Inisialisasi VPS Baru & Fix Database
                     </h2>
                     <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                        Ikuti langkah berikut untuk memigrasikan backend ke server VPS baru Anda. 
+                        Jika Anda melihat error <strong>ECONNREFUSED ::1</strong> atau <strong>Access Denied</strong>, ikuti Langkah 1.5 dan update file konfigurasi.
                     </p>
 
                     <div className="space-y-12">
@@ -512,14 +537,13 @@ initDb();`;
                         <section>
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <Command className="w-4 h-4 text-emerald-500" /> Langkah 0: Persiapan System VPS
+                                    <Command className="w-4 h-4 text-emerald-500" /> Langkah 0: Install Node.js & MySQL
                                 </h3>
                                 <button onClick={() => copyToClipboard(vpsSetupCmd)} className="text-[10px] bg-slate-900 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-slate-800 flex items-center gap-1.5">
-                                    <Copy className="w-3.5 h-3.5" /> Salin Command Setup
+                                    <Copy className="w-3.5 h-3.5" /> Salin Command
                                 </button>
                             </div>
                             <div className="p-5 bg-slate-900 rounded-xl border border-slate-800">
-                                <p className="text-[10px] text-slate-500 mb-3 font-mono"># Jalankan perintah ini di terminal VPS baru Anda untuk menginstall Node.js & MySQL</p>
                                 <pre className="text-emerald-400 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{vpsSetupCmd}</pre>
                             </div>
                         </section>
@@ -527,14 +551,32 @@ initDb();`;
                         {/* Step 1: Install Dependencies */}
                         <section className="pt-8 border-t">
                             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                                <Cpu className="w-4 h-4" /> Langkah 1: Persiapan Folder
+                                <Cpu className="w-4 h-4" /> Langkah 1: Buat Folder Project
                             </h3>
                             <div className="p-5 bg-slate-900 rounded-xl space-y-3">
-                                <div className="text-[10px] text-slate-500 font-mono mb-1"># Buat folder baru di VPS</div>
                                 <code className="block text-emerald-400 text-xs font-mono leading-relaxed">
                                     mkdir smartstock && cd smartstock<br/>
                                     npm init -y
                                 </code>
+                            </div>
+                        </section>
+
+                        {/* Step 1.5: Fix User MySQL (CRITICAL) */}
+                        <section className="pt-8 border-t">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex flex-col">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <Key className="w-4 h-4 text-rose-500" /> Langkah 1.5: Fix User MySQL (PENTING!)
+                                    </h3>
+                                    <span className="text-[10px] text-rose-500 font-bold mt-1">Lakukan ini jika error "Access Denied" atau "ECONNREFUSED"</span>
+                                </div>
+                                <button onClick={() => copyToClipboard(mysqlUserSetupCmd)} className="text-[10px] bg-rose-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-rose-700 flex items-center gap-1.5 shadow-md">
+                                    <Copy className="w-3.5 h-3.5" /> Salin SQL Fix
+                                </button>
+                            </div>
+                            <div className="p-5 bg-slate-900 rounded-xl border border-rose-900/50">
+                                <p className="text-[10px] text-slate-400 mb-3 italic">User 'root' MySQL di Ubuntu seringkali tidak bisa login pakai password. Kita harus buat user baru:</p>
+                                <pre className="text-rose-300 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">{mysqlUserSetupCmd}</pre>
                             </div>
                         </section>
 
@@ -557,9 +599,12 @@ initDb();`;
                         {/* .env */}
                         <section className="pt-8 border-t">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <FileText className="w-4 h-4 text-blue-500" /> .env
-                                </h3>
+                                <div className="flex flex-col">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <FileText className="w-4 h-4 text-blue-500" /> .env (Konfigurasi DB)
+                                    </h3>
+                                    <span className="text-[10px] text-emerald-500 font-bold mt-1">Gunakan DB_HOST=127.0.0.1 (Bukan localhost)</span>
+                                </div>
                                 <button onClick={() => copyToClipboard(envCode)} className="text-[10px] bg-slate-100 px-4 py-1.5 rounded-lg font-bold hover:bg-slate-200 flex items-center gap-1.5">
                                     <Copy className="w-3.5 h-3.5" /> Salin Kode
                                 </button>
@@ -567,7 +612,7 @@ initDb();`;
                             <div className="bg-slate-900 rounded-xl p-5 border border-slate-800">
                                 <pre className="text-emerald-400 text-[11px] font-mono leading-relaxed">{envCode}</pre>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2 italic">* Simpan sebagai file bernama <strong>.env</strong> dan ganti password MySQL Anda.</p>
+                            <p className="text-[10px] text-slate-400 mt-2 italic">* Pastikan username/password sesuai dengan yang Anda buat di Langkah 1.5</p>
                         </section>
 
                         {/* setupDb.js */}
