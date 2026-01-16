@@ -101,7 +101,18 @@ app.get('/api/data', checkDb, async (req, res) => {
         const [rejInv] = await pool.query('SELECT * FROM reject_inventory');
         const [rejLogs] = await pool.query('SELECT * FROM rejects ORDER BY timestamp DESC');
         const [sup] = await pool.query('SELECT * FROM suppliers');
-        const [usr] = await pool.query('SELECT * FROM users');
+        
+        // Auto-Create Admin if Users Empty
+        let [usr] = await pool.query('SELECT * FROM users');
+        if (usr.length === 0) {
+             console.log("⚠️ Users table empty. Creating default admin...");
+             // Hash for 'admin22': 3d3467611599540c49097e3a2779836183c50937617565437172083626217315
+             const defaultAdminSql = "INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 'admin', 'active', NOW())";
+             await pool.query(defaultAdminSql);
+             // Re-fetch
+             [usr] = await pool.query('SELECT * FROM users');
+        }
+
         const [setRows] = await pool.query('SELECT * FROM settings');
 
         const settings = {};
