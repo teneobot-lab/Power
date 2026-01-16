@@ -154,7 +154,14 @@ app.post('/api/sync', checkDb, async (req, res) => {
                 const values = data.map(item => keys.map(k => {
                     let v = item[k];
                     if (typeof v === 'object' && v !== null) return JSON.stringify(v);
-                    if (typeof v === 'string' && v.includes('T') && v.length > 20) return v.slice(0, 19).replace('T', ' ');
+                    
+                    // FIXED: Hanya bersihkan string jika itu adalah format ISO Date yang valid (mengandung T dan mengikuti pola tanggal)
+                    // Sebelumnya v.includes('T') tanpa regex merusak nama barang panjang yang mengandung huruf T
+                    const isIsoDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
+                    if (isIsoDate) {
+                        return v.slice(0, 19).replace('T', ' ');
+                    }
+                    
                     return v;
                 }));
                 await conn.query(`INSERT INTO \`${table}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES ?`, [values]);
