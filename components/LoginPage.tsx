@@ -1,21 +1,30 @@
 
 import React, { useState } from 'react';
-import { User } from '../types';
-import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Wrench } from 'lucide-react';
+import { User, AppSettings } from '../types';
+import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Settings, X, Wifi, Save, CheckCircle2, Loader2 } from 'lucide-react';
 import { verifyPassword } from '../utils/security';
+import { checkServerConnection } from '../services/api';
 
 interface LoginPageProps {
   users: User[];
   onLogin: (user: User) => void;
   isLoadingData: boolean;
+  settings?: AppSettings;
+  onUpdateSettings?: (settings: AppSettings) => void;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, settings, onUpdateSettings }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
+  
+  // Server Config State
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
+  const [tempVpsUrl, setTempVpsUrl] = useState(settings?.vpsApiUrl || '');
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
+  const [connectionMsg, setConnectionMsg] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,17 +44,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             } 
             
             // Verifikasi Hash Password
-            // Note: Jika password di database masih plain text (legacy), validasi ini mungkin gagal.
             const isValid = await verifyPassword(password, foundUser.password || '');
             
             if (isValid) {
-                // Login successful
                 onLogin(foundUser);
             } else {
                  throw new Error('Password yang Anda masukkan salah.');
             }
         } else {
-             throw new Error('Username tidak ditemukan.');
+             throw new Error('Username tidak ditemukan. Cek koneksi server jika Anda baru saja setup database.');
         }
     } catch (err: any) {
         setError(err.message);
@@ -55,10 +62,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
   };
 
   const handleFactoryReset = () => {
-    if (confirm("PERHATIAN: Ini akan menghapus semua data CACHE di browser (Local Storage) dan mereset ke pengaturan awal.\n\nLakukan ini jika Anda tidak bisa login karena perubahan sistem password.\n\nData di Database VPS (MySQL) AMAN dan tidak akan terhapus.\n\nLanjutkan?")) {
+    if (confirm("Reset Data Lokal? Ini akan menghapus pengaturan yang tersimpan di browser.")) {
         localStorage.clear();
         window.location.reload();
     }
+  };
+
+  const handleTestConnection = async () => {
+      setConnectionStatus('checking');
+      const result = await checkServerConnection(tempVpsUrl);
+      setConnectionStatus(result.online ? 'success' : 'failed');
+      setConnectionMsg(result.message);
+  };
+
+  const handleSaveConfig = () => {
+      if (onUpdateSettings && settings) {
+          onUpdateSettings({ ...settings, vpsApiUrl: tempVpsUrl });
+          alert("Pengaturan server disimpan. Aplikasi akan mencoba menghubungkan ulang...");
+          setIsConfigOpen(false);
+      }
   };
 
   return (
@@ -69,7 +91,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
         <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
       </div>
 
+      {/* Main Login Card */}
       <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl p-8 relative z-10 animate-in fade-in zoom-in duration-500">
+        <button 
+            onClick={() => setIsConfigOpen(true)}
+            className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-full transition-all"
+            title="Konfigurasi Server"
+        >
+            <Settings className="w-5 h-5" />
+        </button>
+
         <div className="text-center mb-8">
             <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg mb-4 transform rotate-3 hover:rotate-6 transition-transform">
                 <ShieldCheck className="w-10 h-10 text-white" />
@@ -135,26 +166,66 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-white/5">
+        <div className="mt-6 pt-4 border-t border-white/5 flex justify-center">
              <button 
                 type="button"
                 onClick={handleFactoryReset}
-                className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:text-rose-400 transition-colors"
+                className="flex items-center gap-2 text-[10px] font-bold text-slate-600 hover:text-rose-400 transition-colors"
              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset Data & Perbaiki Login
+                <RotateCcw className="w-3 h-3" />
+                Reset Data Lokal
              </button>
-             <p className="text-center text-[10px] text-slate-600 mt-2">
-                Gunakan tombol di atas jika Anda tidak bisa login setelah update.
-             </p>
-        </div>
-
-        <div className="mt-4 text-center">
-            <p className="text-slate-600 text-xs">
-                SmartStock System v2.0
-            </p>
         </div>
       </div>
+
+      {/* Server Config Modal */}
+      {isConfigOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+                <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+                    <h3 className="font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Konfigurasi Server</h3>
+                    <button onClick={() => setIsConfigOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-white" /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <p className="text-xs text-slate-400 mb-4">
+                        Masukkan URL API VPS Anda di sini untuk menghubungkan aplikasi ke database MySQL sebelum login.
+                    </p>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase mb-2">VPS API URL</label>
+                        <div className="flex gap-2">
+                            <input 
+                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500" 
+                                placeholder="http://xxx.xxx.xxx.xxx:3000"
+                                value={tempVpsUrl}
+                                onChange={(e) => setTempVpsUrl(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                        <button onClick={handleTestConnection} className="flex-1 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center justify-center gap-2 border border-slate-700">
+                            {connectionStatus === 'checking' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wifi className="w-3 h-3" />}
+                            Tes Koneksi
+                        </button>
+                    </div>
+
+                    {connectionMsg && (
+                        <div className={`p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                            {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                            {connectionMsg}
+                        </div>
+                    )}
+
+                    <div className="pt-4 mt-4 border-t border-slate-800 flex justify-end gap-3">
+                        <button onClick={() => setIsConfigOpen(false)} className="px-4 py-2 text-slate-400 text-xs font-bold hover:text-white">Batal</button>
+                        <button onClick={handleSaveConfig} className="px-6 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 flex items-center gap-2">
+                            <Save className="w-3 h-3" /> Simpan & Hubungkan
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -256,7 +256,13 @@ const App: React.FC = () => {
       return (
           <>
             <ToastContainer toasts={toasts} onRemove={removeToast} />
-            <LoginPage users={users} onLogin={handleLogin} isLoadingData={isLoading && users.length === 0} />
+            <LoginPage 
+                users={users} 
+                onLogin={handleLogin} 
+                isLoadingData={isLoading && users.length === 0}
+                settings={settings}
+                onUpdateSettings={handleUpdateSettings}
+            />
           </>
       );
   }

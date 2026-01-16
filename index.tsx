@@ -12,10 +12,7 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Sederhana untuk menangkap crash saat render
-// Fix: Use Component explicitly and define state/props handling to satisfy TS environment
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState;
-
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
