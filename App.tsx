@@ -72,7 +72,6 @@ const App: React.FC = () => {
     const activeUrl = targetUrl || settings.viteGasUrl;
     
     try {
-      // 1. Muat data lokal dulu (sebagai fallback)
       const localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
       if (!targetUrl) {
           setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
@@ -84,7 +83,6 @@ const App: React.FC = () => {
           setSettings(localSettings);
       }
 
-      // 2. Cek Koneksi Cloud/VPS
       if (activeUrl && activeUrl.length > 0) {
         const conn = await checkServerConnection(activeUrl);
         if (conn.online) {
@@ -96,7 +94,6 @@ const App: React.FC = () => {
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
             setUsers(cloudData.users || []);
-            // Jangan timpa URL itu sendiri saat sync settings dari cloud jika sedang tes
             if (!targetUrl) setSettings(prev => ({ ...prev, ...cloudData.settings }));
             
             setIsCloudConnected(true);
@@ -119,13 +116,10 @@ const App: React.FC = () => {
     }
   }, [settings.viteGasUrl, showToast]);
 
-  // Jalankan saat startup
   useEffect(() => { loadData(); }, []);
 
-  // Tambahkan pemicu: Jika settings.viteGasUrl berubah (setelah klik simpan), paksa panggil loadData
   const handleUpdateSettings = (newSettings: AppSettings) => {
       setSettings(newSettings);
-      // Jika URL berubah, panggil loadData dengan URL baru untuk verifikasi status cloud
       loadData(newSettings.viteGasUrl);
   };
 
@@ -168,6 +162,16 @@ const App: React.FC = () => {
         setItems(updatedInventory);
         showToast(`Transaksi ${transaction.type} diproses`, 'success');
     } catch (e: any) { showToast('Transaksi gagal', 'error'); }
+  };
+
+  const updateTransaction = (updatedTx: Transaction) => {
+    setTransactions(prev => prev.map(tx => tx.id === updatedTx.id ? updatedTx : tx));
+    showToast('Transaksi diperbarui', 'success');
+  };
+
+  const deleteTransaction = (id: string) => {
+    setTransactions(prev => prev.filter(tx => tx.id !== id));
+    showToast('Transaksi dihapus dari riwayat', 'warning');
   };
 
   const calculateStockChange = (currentItems: InventoryItem[], tx: Transaction): InventoryItem[] => {
@@ -241,8 +245,31 @@ const App: React.FC = () => {
                   userRole={defaultRole} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
                 />
             )}
-            {currentView === AppView.TRANSACTIONS && <TransactionManager inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={() => {}} userRole={defaultRole} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)} />}
-            {currentView === AppView.REJECT && <RejectManager rejectMasterData={rejectItems} rejectLogs={rejectLogs} onProcessReject={(log) => setRejectLogs(prev => [log, ...prev])} onUpdateRejectLog={(updatedLog) => setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l))} onDeleteRejectLog={(id) => setRejectLogs(prev => prev.filter(l => l.id !== id))} onUpdateRejectMaster={setRejectItems} userRole={defaultRole} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} />}
+            {currentView === AppView.TRANSACTIONS && (
+              <TransactionManager 
+                inventory={items} 
+                transactions={transactions} 
+                onProcessTransaction={processTransaction} 
+                onUpdateTransaction={updateTransaction} 
+                onDeleteTransaction={deleteTransaction}
+                userRole={defaultRole} 
+                columns={tablePrefs.transactions} 
+                onToggleColumn={(id) => toggleColumn('transactions', id)} 
+              />
+            )}
+            {currentView === AppView.REJECT && (
+              <RejectManager 
+                rejectMasterData={rejectItems} 
+                rejectLogs={rejectLogs} 
+                onProcessReject={(log) => { setRejectLogs(prev => [log, ...prev]); showToast('Log Reject berhasil disimpan', 'success'); }} 
+                onUpdateRejectLog={(updatedLog) => { setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l)); showToast('Log Reject diperbarui', 'success'); }} 
+                onDeleteRejectLog={(id) => { setRejectLogs(prev => prev.filter(l => l.id !== id)); showToast('Log Reject dihapus', 'warning'); }} 
+                onUpdateRejectMaster={(newList) => { setRejectItems(newList); showToast('Master Reject diperbarui', 'info'); }} 
+                userRole={defaultRole} 
+                columns={tablePrefs.rejects} 
+                onToggleColumn={(id) => toggleColumn('rejects', id)} 
+              />
+            )}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
             {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={defaultRole} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}

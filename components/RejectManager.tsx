@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { RejectItem, RejectLog, RejectItemDetail, UserRole, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History, Copy, Edit3, Save } from 'lucide-react';
+import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History, Copy, Edit3, Save, Layers, Scale, Box, Edit2 } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 import * as XLSX from 'xlsx';
 
@@ -40,6 +40,11 @@ const RejectManager: React.FC<RejectManagerProps> = ({
 
   // Master Data Tab State
   const [masterSearch, setMasterSearch] = useState('');
+  const [isMasterModalOpen, setIsMasterModalOpen] = useState(false);
+  const [editingMasterItem, setEditingMasterItem] = useState<RejectItem | null>(null);
+  const [newMasterItem, setNewMasterItem] = useState<Partial<RejectItem>>({
+    sku: '', name: '', baseUnit: 'Pcs', unit2: '', ratio2: 1, unit3: '', ratio3: 1
+  });
 
   // Item Selection State (Input Log)
   const [searchQuery, setSearchQuery] = useState('');
@@ -222,16 +227,72 @@ const RejectManager: React.FC<RejectManagerProps> = ({
       }
   };
 
-  const handleCopyToClipboard = (log: RejectLog) => {
-      const header = `Data Reject KKL (${log.date})`;
-      const body = log.items.map(item => `• ${item.itemName} - ${item.quantity} ${item.unit} (${item.reason})`).join('\n');
-      const textToCopy = `${header}\n${body}`;
-      
-      navigator.clipboard.writeText(textToCopy).then(() => {
-          alert("Data berhasil disalin ke clipboard!");
-      }).catch(err => {
-          console.error("Gagal menyalin: ", err);
-      });
+  // --- CRUD MASTER HANDLERS ---
+  
+  const handleOpenMasterModal = (item?: RejectItem) => {
+    if (item) {
+        setEditingMasterItem(item);
+        setNewMasterItem({
+            sku: item.sku,
+            name: item.name,
+            baseUnit: item.baseUnit,
+            unit2: item.unit2 || '',
+            ratio2: item.ratio2 || 1,
+            unit3: item.unit3 || '',
+            ratio3: item.ratio3 || 1
+        });
+    } else {
+        setEditingMasterItem(null);
+        setNewMasterItem({ sku: '', name: '', baseUnit: 'Pcs', unit2: '', ratio2: 1, unit3: '', ratio3: 1 });
+    }
+    setIsMasterModalOpen(true);
+  };
+
+  const handleSaveMasterItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMasterItem.sku || !newMasterItem.name) return;
+    
+    if (editingMasterItem) {
+        const updatedList = rejectMasterData.map(item => 
+            item.id === editingMasterItem.id 
+            ? { 
+                ...item, 
+                sku: newMasterItem.sku!, 
+                name: newMasterItem.name!, 
+                baseUnit: newMasterItem.baseUnit || 'Pcs',
+                unit2: newMasterItem.unit2 || undefined,
+                ratio2: newMasterItem.unit2 ? Number(newMasterItem.ratio2) : undefined,
+                unit3: newMasterItem.unit3 ? String(newMasterItem.unit3) : undefined,
+                ratio3: newMasterItem.unit3 ? Number(newMasterItem.ratio3) : undefined,
+                lastUpdated: new Date().toISOString()
+              } 
+            : item
+        );
+        onUpdateRejectMaster(updatedList);
+    } else {
+        const newItem: RejectItem = {
+            id: generateId(),
+            sku: newMasterItem.sku!,
+            name: newMasterItem.name!,
+            baseUnit: newMasterItem.baseUnit || 'Pcs',
+            unit2: newMasterItem.unit2 || undefined,
+            ratio2: newMasterItem.unit2 ? Number(newMasterItem.ratio2) : undefined,
+            unit3: newMasterItem.unit3 ? String(newMasterItem.unit3) : undefined,
+            ratio3: newMasterItem.unit3 ? Number(newMasterItem.ratio3) : undefined,
+            lastUpdated: new Date().toISOString()
+        };
+        onUpdateRejectMaster([...rejectMasterData, newItem]);
+    }
+
+    setIsMasterModalOpen(false);
+    setNewMasterItem({ sku: '', name: '', baseUnit: 'Pcs', unit2: '', ratio2: 1, unit3: '', ratio3: 1 });
+    setEditingMasterItem(null);
+  };
+
+  const handleDeleteMasterItem = (id: string) => {
+      if (confirm("Hapus item master ini? Log reject yang sudah ada akan kehilangan rincian unit jika data ini dihapus.")) {
+          onUpdateRejectMaster(rejectMasterData.filter(i => i.id !== id));
+      }
   };
 
   const handleDownloadTemplate = () => {
@@ -276,6 +337,18 @@ const RejectManager: React.FC<RejectManagerProps> = ({
       if (masterImportRef.current) masterImportRef.current.value = '';
     };
     reader.readAsBinaryString(file);
+  };
+
+  // Fix: Added handleCopyToClipboard to fix missing name error.
+  const handleCopyToClipboard = (log: RejectLog) => {
+    const itemsText = log.items.map(it => `- ${it.itemName}: ${it.quantity} ${it.unit} (${it.reason})`).join('\n');
+    const text = `REJECT LOG [${log.date}]\n----------------\n${itemsText}\n----------------\nNotes: ${log.notes || '-'}`;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        alert("Log detail berhasil disalin ke clipboard!");
+    }).catch(err => {
+        console.error('Gagal menyalin:', err);
+    });
   };
 
   const sortedLogs = useMemo(() => {
@@ -460,6 +533,7 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                   </div>
                   <div className="flex gap-2">
                       <input type="file" accept=".xlsx, .xls" className="hidden" ref={masterImportRef} onChange={handleImportMaster} />
+                      <button onClick={() => handleOpenMasterModal()} className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-all shadow-md"><Plus className="w-4 h-4" /> Tambah Barang Manual</button>
                       <button onClick={handleDownloadTemplate} className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-600 bg-white border rounded-lg hover:bg-slate-50 transition-colors"><Download className="w-3.5 h-3.5" /> Template Excel</button>
                       <button onClick={() => masterImportRef.current?.click()} className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg hover:bg-emerald-100 transition-colors"><FileSpreadsheet className="w-3.5 h-3.5" /> Import Reject Master</button>
                   </div>
@@ -492,7 +566,10 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                                               </div>
                                           </td>
                                           <td className="px-6 py-4 text-right">
-                                              <button onClick={() => onUpdateRejectMaster(rejectMasterData.filter(i => i.id !== item.id))} className="text-slate-400 hover:text-rose-600 p-1.5 rounded-full hover:bg-rose-50 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                              <div className="flex justify-end gap-1">
+                                                <button onClick={() => handleOpenMasterModal(item)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="Edit Barang"><Edit2 className="w-4 h-4" /></button>
+                                                <button onClick={() => handleDeleteMasterItem(item.id)} className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="Hapus Barang"><Trash2 className="w-4 h-4" /></button>
+                                              </div>
                                           </td>
                                       </tr>
                                   ))
@@ -506,7 +583,79 @@ const RejectManager: React.FC<RejectManagerProps> = ({
           </div>
       )}
 
-      {/* EDIT MODAL */}
+      {/* MASTER DATA ADD/EDIT MODAL */}
+      {isMasterModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
+           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-8 py-6 border-b bg-slate-50 flex justify-between items-center">
+                  <div className="flex items-center gap-3">
+                    <Database className="w-6 h-6 text-rose-600" />
+                    <h3 className="font-bold text-slate-800">{editingMasterItem ? 'Edit Master Reject' : 'Tambah Master Reject Manual'}</h3>
+                  </div>
+                  <button onClick={() => setIsMasterModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
+              </div>
+              <form onSubmit={handleSaveMasterItem} className="p-8 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                  <div className="grid grid-cols-2 gap-4">
+                      <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 block uppercase mb-2">ID Barang / SKU</label>
+                          <input required value={newMasterItem.sku || ''} onChange={e => setNewMasterItem({...newMasterItem, sku: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50/50" placeholder="SKU-XXXX" />
+                      </div>
+                      <div className="col-span-1">
+                          <label className="text-[10px] font-black text-slate-400 block uppercase mb-2">Unit Dasar (Base)</label>
+                          <input required value={newMasterItem.baseUnit || ''} onChange={e => setNewMasterItem({...newMasterItem, baseUnit: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50/50" placeholder="Pcs / Kg" />
+                      </div>
+                      <div className="col-span-2">
+                          <label className="text-[10px] font-black text-slate-400 block uppercase mb-2">Nama Barang</label>
+                          <input required value={newMasterItem.name || ''} onChange={e => setNewMasterItem({...newMasterItem, name: e.target.value})} className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50/50" placeholder="Contoh: DAGING AYAM" />
+                      </div>
+                  </div>
+
+                  <div className="space-y-4 pt-4 border-t">
+                      <h4 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Layers className="w-4 h-4" /> Multi-Unit Conversion (Opsional)</h4>
+                      
+                      {/* Level 2 */}
+                      <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 flex items-end gap-3">
+                        <div className="flex-1">
+                            <label className="text-[10px] font-bold text-rose-600 block mb-1">Unit Level 2</label>
+                            <input value={newMasterItem.unit2 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit2: e.target.value})} className="w-full border border-rose-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-rose-500" placeholder="Box / Gr" />
+                        </div>
+                        <div className="w-32">
+                            <label className="text-[10px] font-bold text-rose-600 block mb-1">Rasio ke Base</label>
+                            <div className="relative">
+                                <Scale className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-rose-300" />
+                                <input type="number" value={newMasterItem.ratio2 || 1} onChange={e => setNewMasterItem({...newMasterItem, ratio2: Number(e.target.value)})} className="w-full border border-rose-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-rose-500" />
+                            </div>
+                        </div>
+                      </div>
+
+                      {/* Level 3 */}
+                      <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex items-end gap-3">
+                        <div className="flex-1">
+                            <label className="text-[10px] font-bold text-blue-600 block mb-1">Unit Level 3</label>
+                            <input value={newMasterItem.unit3 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit3: e.target.value})} className="w-full border border-blue-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" placeholder="Karton / Sack" />
+                        </div>
+                        <div className="w-32">
+                            <label className="text-[10px] font-bold text-blue-600 block mb-1">Rasio ke Base</label>
+                            <div className="relative">
+                                <Scale className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-blue-300" />
+                                <input type="number" value={newMasterItem.ratio3 || 1} onChange={e => setNewMasterItem({...newMasterItem, ratio3: Number(e.target.value)})} className="w-full border border-blue-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
+                            </div>
+                        </div>
+                      </div>
+                  </div>
+
+                  <div className="pt-6 border-t flex justify-end gap-3">
+                      <button type="button" onClick={() => setIsMasterModalOpen(false)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-all">BATAL</button>
+                      <button type="submit" className="px-10 py-3 bg-rose-600 text-white font-bold rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-700 active:scale-95 transition-all flex items-center gap-2">
+                        <Save className="w-4 h-4" /> {editingMasterItem ? 'UPDATE DATA' : 'SIMPAN MASTER'}
+                      </button>
+                  </div>
+              </form>
+           </div>
+        </div>
+      )}
+
+      {/* EDIT LOG MODAL */}
       {isEditModalOpen && editingLog && (
          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">

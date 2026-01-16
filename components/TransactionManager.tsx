@@ -10,6 +10,7 @@ interface TransactionManagerProps {
   transactions: Transaction[];
   onProcessTransaction: (transaction: Transaction) => void;
   onUpdateTransaction: (transaction: Transaction) => void;
+  onDeleteTransaction: (id: string) => void;
   userRole: UserRole;
   suppliers?: Supplier[];
   columns: TableColumn[];
@@ -17,7 +18,7 @@ interface TransactionManagerProps {
 }
 
 const TransactionManager: React.FC<TransactionManagerProps> = ({ 
-  inventory, transactions, onProcessTransaction, onUpdateTransaction, userRole, suppliers = [], columns, onToggleColumn 
+  inventory, transactions, onProcessTransaction, onUpdateTransaction, onDeleteTransaction, userRole, suppliers = [], columns, onToggleColumn 
 }) => {
   const canEdit = userRole === 'admin' || userRole === 'staff';
   const isVisible = (id: string) => columns.find(c => c.id === id)?.visible;
@@ -40,14 +41,14 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 
   // --- Item Selection State ---
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearchQuery = useDebounce(searchQuery, 150); // Faster debounce for snappier feel
+  const debouncedSearchQuery = useDebounce(searchQuery, 150); 
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string>('');
   const [quantityInput, setQuantityInput] = useState<number | undefined>(undefined);
   const [isAutocompleteOpen, setIsAutocompleteOpen] = useState(false);
   
   // --- Navigation State ---
-  const [activeIndex, setActiveIndex] = useState(0); // Start at 0 for auto-select
+  const [activeIndex, setActiveIndex] = useState(0); 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -82,10 +83,8 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Real-time stock validation check
   useEffect(() => {
     if (type === 'OUT' && selectedItem && quantityInput) {
-      // Check total requested in cart for this item already
       const alreadyInCart = cartItems
         .filter(it => it.itemId === selectedItem.id)
         .reduce((sum, current) => sum + current.totalBaseQuantity, 0);
@@ -102,7 +101,6 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     }
   }, [quantityInput, selectedItem, type, cartItems]);
 
-  // --- SMART AUTOCOMPLETE LOGIC (MeiliSearch-like) ---
   const filteredInventory = useMemo(() => {
     if (!debouncedSearchQuery) return [];
     
@@ -111,39 +109,27 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 
     return inventory
       .filter(item => {
-        // Gabungkan semua field yang relevan untuk pencarian
         const searchString = `${item.name} ${item.sku} ${item.category}`.toLowerCase();
-        
-        // Logika "AND": Semua kata yang diketik harus ada di item, urutan tidak masalah
-        // Contoh: "ayam bakso" akan match dengan "Bakso Sapi & Ayam"
         return tokens.every(token => searchString.includes(token));
       })
       .sort((a, b) => {
-        // Prioritas Sorting agar UX lebih cerdas
         const nameA = a.name.toLowerCase();
         const nameB = b.name.toLowerCase();
-        
-        // 1. Exact Match paling atas
         if (nameA === query) return -1;
         if (nameB === query) return 1;
-
-        // 2. Starts With (awalan nama) lebih prioritas daripada ada di tengah
         const aStarts = nameA.startsWith(query);
         const bStarts = nameB.startsWith(query);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
-
         return 0;
       })
-      .slice(0, 10); // Batasi hasil agar ringan
+      .slice(0, 10); 
   }, [debouncedSearchQuery, inventory]);
 
-  // Reset active index when query changes
   useEffect(() => {
     setActiveIndex(0);
   }, [debouncedSearchQuery]);
 
-  // Scroll active item into view
   useEffect(() => {
     if (activeIndex >= 0 && listRef.current) {
       const activeElement = listRef.current.children[activeIndex] as HTMLElement;
@@ -162,17 +148,15 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     setValidationError(null);
     setActiveIndex(-1);
 
-    // UX: Navigation Focus Flow -> Pindah ke Qty
     requestAnimationFrame(() => {
         qtyInputRef.current?.focus();
-        qtyInputRef.current?.select(); // Auto select text agar user bisa langsung timpa
+        qtyInputRef.current?.select(); 
     });
   };
 
   const handleAddToCart = (targetCart: 'new' | 'edit') => {
     if (!selectedItem || !quantityInput) return;
     
-    // Final check for OUT transactions
     if (type === 'OUT') {
         const alreadyInCart = (targetCart === 'new' ? cartItems : editCartItems)
             .filter(it => it.itemId === selectedItem.id)
@@ -190,7 +174,6 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
     if (targetCart === 'new') setCartItems([...cartItems, newItem]);
     else setEditCartItems([...editCartItems, newItem]);
     
-    // UX: Reset and Focus Loop -> Kembali ke Search Bar
     setSelectedItem(null); 
     setSearchQuery(''); 
     setQuantityInput(undefined); 
@@ -204,10 +187,8 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
   };
 
   const handleSearchKeyDown = (e: React.KeyboardEvent) => {
-    // Navigasi saat list tertutup tapi user menekan Enter (Auto-select top result)
     if (e.key === 'Enter' && filteredInventory.length > 0) {
        e.preventDefault();
-       // Jika ada index aktif, pilih itu. Jika tidak, pilih hasil paling atas (Index 0)
        const indexToSelect = activeIndex >= 0 ? activeIndex : 0;
        handleSelectItem(filteredInventory[indexToSelect]);
        return;
@@ -257,7 +238,6 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
       ...(type === 'IN' ? { supplierName, poNumber, riNumber, photos } : {})
     });
     setCartItems([]); setNotes(''); setPhotos([]); setSupplierName(''); setPoNumber(''); setRiNumber('');
-    // Fokus balik ke search setelah submit
     requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
@@ -274,13 +254,6 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 
   const updateEditItemQty = (index: number, newQty: number) => {
     const updated = [...editCartItems];
-    const itemInInv = inventory.find(i => i.id === updated[index].itemId);
-    
-    // If it's an OUT transaction, validate against inventory
-    if (editType === 'OUT' && itemInInv) {
-        // Simple validation logic
-    }
-    
     updated[index] = { ...updated[index], quantityInput: newQty, totalBaseQuantity: newQty * (updated[index].conversionRatio || 1) };
     setEditCartItems(updated);
   };
@@ -509,7 +482,20 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
                             {isVisible('details') && <td className="px-6 py-4 text-xs font-semibold text-slate-700">{tx.items.length} Barang {tx.supplierName && <span className="text-slate-400 font-normal">({tx.supplierName})</span>}</td>}
                             {isVisible('docs') && <td className="px-6 py-4 text-xs flex items-center gap-1 font-bold text-slate-500">{tx.photos?.length || 0} <ImageIcon className="w-3.5 h-3.5 text-slate-400" /></td>}
                             {isVisible('notes') && <td className="px-6 py-4 max-w-[150px] truncate italic text-slate-400">{tx.notes || '-'}</td>}
-                            <td className="px-6 py-4 text-right"><button onClick={() => openEditModal(tx)} className="text-blue-600 font-bold hover:bg-blue-50 px-3 py-1 rounded-lg transition-all">{canEdit ? 'Edit' : 'Detail'}</button></td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-2">
+                                <button onClick={() => openEditModal(tx)} className="text-blue-600 font-bold hover:bg-blue-50 px-3 py-1 rounded-lg transition-all">{canEdit ? 'Edit' : 'Detail'}</button>
+                                {canEdit && (
+                                  <button 
+                                    onClick={() => { if(window.confirm('Hapus transaksi ini dari riwayat?')) onDeleteTransaction(tx.id); }} 
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    title="Hapus Transaksi"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                         </tr>
                     ))}
                  </tbody>
@@ -621,4 +607,3 @@ const TransactionManager: React.FC<TransactionManagerProps> = ({
 };
 
 export default TransactionManager;
-    
