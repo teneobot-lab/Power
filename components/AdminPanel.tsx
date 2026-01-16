@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from '../types';
+import { generateId } from '../utils/storageUtils';
 import { checkServerConnection } from '../services/api';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight } from 'lucide-react';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2 } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -18,38 +19,113 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   settings, onUpdateSettings, 
   users, onAddUser, onUpdateUser, onDeleteUser, onFullSyncToSheets
 }) => {
-  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'cloud' | 'migration'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'cloud' | 'migration' | 'terminal'>('settings');
   const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userFormData, setUserFormData] = useState<Partial<User>>({});
   
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed' | 'partial'>('idle');
   const [connectionMsg, setConnectionMsg] = useState('');
 
+  // Terminal State
+  const [terminalLogs, setTerminalLogs] = useState<string[]>([
+    "> Connected to SmartStock Linux Shell...",
+    "> WARNING: You have root/sudo access depending on server config.",
+    "> Use 'npm install', 'ls', 'whoami', 'git pull' etc.",
+    "> Interactive commands (nano, vim, password prompts) NOT supported."
+  ]);
+  const [terminalInput, setTerminalInput] = useState('');
+  const [isExecutingCmd, setIsExecutingCmd] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { setTempSettings(settings); }, [settings]);
+  
+  // Auto-scroll terminal
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [terminalLogs, activeTab]);
 
   const handleSaveSettings = () => {
     onUpdateSettings(tempSettings);
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
+    addTerminalLog("Settings saved successfully.");
   };
 
   const handleTestConnection = async (type: 'vps' | 'gas') => {
       const url = type === 'vps' ? tempSettings.vpsApiUrl : tempSettings.viteGasUrl;
+      addTerminalLog(`Initiating connection test to ${type.toUpperCase()}...`);
+      
       if (!url) {
           setConnectionStatus('failed');
           setConnectionMsg('URL tidak boleh kosong.');
+          addTerminalLog(`Error: ${type.toUpperCase()} URL is empty.`);
           return;
       }
       setConnectionStatus('checking');
       const result = await checkServerConnection(url);
       setConnectionStatus(result.online ? 'success' : 'failed');
       setConnectionMsg(result.message);
+      addTerminalLog(`Result: ${result.message} (Latency: ${result.latency || 'N/A'}ms)`);
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     alert("Kode berhasil disalin!");
+  };
+
+  const addTerminalLog = (msg: string) => {
+      // Handle multiline output from shell
+      const lines = msg.split('\n');
+      const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+      const newLogs = lines.map(line => line.trim() === '' ? '' : `[${timestamp}] ${line}`);
+      setTerminalLogs(prev => [...prev, ...newLogs]);
+  };
+
+  const handleTerminalSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!terminalInput.trim()) return;
+      
+      const cmd = terminalInput.trim();
+      setTerminalLogs(prev => [...prev, `$ ${cmd}`]);
+      setTerminalInput('');
+      setIsExecutingCmd(true);
+
+      // Client-side helper commands
+      if (cmd.toLowerCase() === 'clear') {
+          setTerminalLogs(["> Console cleared."]);
+          setIsExecutingCmd(false);
+          return;
+      }
+
+      // Execute on Backend (Real Shell)
+      try {
+          const cleanBase = tempSettings.vpsApiUrl === '/' ? '' : tempSettings.vpsApiUrl.replace(/\/$/, '');
+          const response = await fetch(`${cleanBase}/api/terminal`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ command: cmd })
+          });
+
+          if (!response.ok) {
+              throw new Error(`HTTP Error: ${response.status}`);
+          }
+
+          const data = await response.json();
+          if (data.output) {
+              addTerminalLog(data.output);
+          } else {
+              addTerminalLog("No output returned.");
+          }
+      } catch (error: any) {
+          addTerminalLog(`EXECUTION ERROR: ${error.message}`);
+          addTerminalLog("Ensure Backend URL is correct and server is running.");
+      } finally {
+          setIsExecutingCmd(false);
+      }
   };
 
   // --- SERVER CODE CONSTANTS ---
@@ -115,6 +191,7 @@ setupDatabase();`;
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { exec } = require('child_process');
 require('dotenv').config();
 
 const app = express();
@@ -160,6 +237,16 @@ const toCamel = (row) => {
     }
     return res;
 };
+
+// ENDPOINT TERMINAL (Baru)
+app.post('/api/terminal', async (req, res) => {
+    const { command } = req.body;
+    if (!command) return res.status(400).json({ output: 'Command empty' });
+    exec(command, { cwd: __dirname }, (error, stdout, stderr) => {
+        if (error) return res.json({ status: 'error', output: stderr || error.message });
+        res.json({ status: 'success', output: stdout || 'No output.' });
+    });
+});
 
 app.get('/api/data', async (req, res) => {
     try {
@@ -229,6 +316,10 @@ initDb();`;
             <Globe className="w-4 h-4" /> 
             <span>Pengaturan Server</span>
           </button>
+          <button onClick={() => setActiveTab('terminal')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'terminal' ? 'bg-slate-800 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
+            <Terminal className="w-4 h-4" /> 
+            <span>Linux Terminal</span>
+          </button>
           <button onClick={() => setActiveTab('migration')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'migration' ? 'bg-amber-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
             <ServerCrash className="w-4 h-4" /> 
             <span>Setup & Migrasi</span>
@@ -278,6 +369,85 @@ initDb();`;
                   </div>
                </div>
             </div>
+          )}
+
+          {activeTab === 'terminal' && (
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 h-full min-h-[500px]">
+                  <div className="xl:col-span-1 space-y-6">
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                          <h2 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+                              <Terminal className="w-5 h-5 text-indigo-600" />
+                              Remote Shell
+                          </h2>
+                          <p className="text-slate-500 text-sm mb-4 leading-relaxed">
+                              Eksekusi perintah sistem (shell commands) langsung di server VPS.
+                          </p>
+                          <div className="p-4 bg-rose-50 rounded-xl border border-rose-100 text-xs text-rose-800 leading-relaxed">
+                              <AlertCircle className="w-4 h-4 inline mr-1 mb-0.5" />
+                              <strong>PERINGATAN:</strong> Anda memiliki akses root/sudo. Perintah berbahaya (seperti rm -rf) akan dieksekusi tanpa konfirmasi. Jangan gunakan <code>nano</code> atau perintah interaktif lainnya.
+                          </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                          <h2 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+                              <Activity className="w-5 h-5 text-emerald-600" />
+                              Quick Commands
+                          </h2>
+                          <div className="grid grid-cols-2 gap-3">
+                              <button onClick={() => { setTerminalInput('npm install'); }} className="p-3 bg-slate-50 border hover:bg-white hover:border-emerald-400 rounded-xl flex flex-col items-center justify-center gap-2 transition-all">
+                                  <FileCode className="w-5 h-5 text-emerald-600" />
+                                  <span className="text-xs font-bold text-slate-600">npm install</span>
+                              </button>
+                              <button onClick={() => { setTerminalInput('ls -la'); }} className="p-3 bg-slate-50 border hover:bg-white hover:border-blue-400 rounded-xl flex flex-col items-center justify-center gap-2 transition-all">
+                                  <HardDrive className="w-5 h-5 text-blue-600" />
+                                  <span className="text-xs font-bold text-slate-600">List Files</span>
+                              </button>
+                              <button onClick={() => { setTerminalInput('git pull'); }} className="p-3 bg-slate-50 border hover:bg-white hover:border-amber-400 rounded-xl flex flex-col items-center justify-center gap-2 transition-all">
+                                  <RefreshCw className="w-5 h-5 text-amber-600" />
+                                  <span className="text-xs font-bold text-slate-600">Git Pull</span>
+                              </button>
+                              <button onClick={() => { setTerminalInput('whoami'); }} className="p-3 bg-slate-50 border hover:bg-white hover:border-violet-400 rounded-xl flex flex-col items-center justify-center gap-2 transition-all">
+                                  <Shield className="w-5 h-5 text-violet-600" />
+                                  <span className="text-xs font-bold text-slate-600">Check User</span>
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="xl:col-span-2 flex flex-col h-full bg-[#1e1e1e] rounded-2xl shadow-2xl overflow-hidden border border-slate-800 font-mono text-sm">
+                      <div className="bg-[#2d2d2d] px-4 py-2 flex items-center justify-between border-b border-black/20">
+                          <div className="flex items-center gap-2">
+                              <Terminal className="w-4 h-4 text-emerald-400" />
+                              <span className="text-slate-300 font-bold text-xs tracking-wider">ROOT TERMINAL - VPS ACCESS</span>
+                          </div>
+                          <div className="flex gap-1.5">
+                              <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+                              <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
+                              <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
+                          </div>
+                      </div>
+                      <div className="flex-1 p-4 overflow-y-auto space-y-1 text-slate-300 custom-scrollbar" style={{fontFamily: "'Consolas', 'Monaco', monospace"}}>
+                          {terminalLogs.map((log, i) => (
+                              <div key={i} className={`whitespace-pre-wrap break-all ${log.includes('ERROR') ? 'text-rose-400' : 'text-slate-300'}`}>
+                                  {log}
+                              </div>
+                          ))}
+                          {isExecutingCmd && <div className="text-emerald-500 animate-pulse">_ Executing...</div>}
+                          <div ref={logsEndRef} />
+                      </div>
+                      <form onSubmit={handleTerminalSubmit} className="p-3 bg-[#252526] border-t border-black/20 flex items-center gap-2">
+                          <span className="text-emerald-500 font-bold">{'>'}</span>
+                          <input 
+                              value={terminalInput}
+                              onChange={e => setTerminalInput(e.target.value)}
+                              className="flex-1 bg-transparent outline-none text-white placeholder:text-slate-600"
+                              placeholder="Type command (e.g. npm install, git pull)..."
+                              autoFocus
+                              disabled={isExecutingCmd}
+                          />
+                      </form>
+                  </div>
+              </div>
           )}
 
           {activeTab === 'migration' && (
@@ -368,7 +538,7 @@ initDb();`;
                             <div className="bg-slate-900 rounded-xl p-5 overflow-x-auto max-h-[500px] custom-scrollbar border border-slate-800">
                                 <pre className="text-emerald-400 text-[11px] font-mono leading-relaxed">{indexJsCode}</pre>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-2 italic">* Simpan sebagai file bernama <strong>index.js</strong></p>
+                            <p className="text-[10px] text-slate-400 mt-2 italic">* Simpan sebagai file bernama <strong>index.js</strong> (Sudah termasuk Endpoint Terminal)</p>
                         </section>
 
                         {/* Final Command */}
@@ -442,7 +612,7 @@ initDb();`;
                <div className="overflow-hidden border border-slate-100 rounded-xl">
                    <table className="w-full text-left">
                      <thead className="bg-slate-50 border-b">
-                       <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th></tr>
+                       <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Aksi</th></tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100 text-sm">
                        {users.map(user => (
@@ -450,15 +620,53 @@ initDb();`;
                            <td className="px-6 py-4"><div className="font-bold text-slate-900">{user.name}</div><div className="text-[11px] text-slate-500">@{user.username}</div></td>
                            <td className="px-6 py-4"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">{user.role}</span></td>
                            <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{user.status}</span></td>
+                           <td className="px-6 py-4 text-right"><div className="flex justify-end gap-2"><button onClick={() => { setEditingUser(user); setUserFormData(user); setIsUserModalOpen(true); }} className="text-slate-400 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button><button onClick={() => onDeleteUser(user.id)} className="text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button></div></td>
                          </tr>
                        ))}
                      </tbody>
                    </table>
+                   <div className="p-4 border-t bg-slate-50">
+                        <button onClick={() => setIsUserModalOpen(true)} className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-indigo-700">Tambah User Baru</button>
+                   </div>
                </div>
             </div>
           )}
         </div>
       </div>
+      
+      {/* User Modal */}
+      {isUserModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+            <div className="px-8 py-6 border-b flex justify-between items-center bg-slate-50/50">
+               <h3 className="font-black text-slate-800 uppercase tracking-tight">{editingUser ? 'Edit User' : 'Tambah User'}</h3>
+               <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-white rounded-full"><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <form onSubmit={(e) => {
+                 e.preventDefault();
+                 const newUser: User = { 
+                     id: editingUser ? editingUser.id : generateId(), 
+                     name: userFormData.name || '', 
+                     username: userFormData.username || '', 
+                     role: (userFormData.role as UserRole) || 'staff', 
+                     status: (userFormData.status as 'active' | 'inactive') || 'active', 
+                     password: userFormData.password || '123456'
+                 };
+                 if (editingUser) onUpdateUser(newUser); else onAddUser(newUser);
+                 setIsUserModalOpen(false);
+            }} className="p-8 space-y-5">
+               <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.name || ''} onChange={e => setUserFormData({...userFormData, name: e.target.value})} /></div>
+               <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Username</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.username || ''} onChange={e => setUserFormData({...userFormData, username: e.target.value})} /></div>
+               {!editingUser && <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Default Password</label><input disabled value="123456" className="w-full px-4 py-2 border rounded-xl text-sm bg-slate-100 text-slate-500" /></div>}
+               <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Role</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.role || 'staff'} onChange={e => setUserFormData({...userFormData, role: e.target.value as UserRole})}><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
+                  <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.status || 'active'} onChange={e => setUserFormData({...userFormData, status: e.target.value as any})}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+               </div>
+               <div className="pt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold">Batal</button><button type="submit" className="px-8 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">Simpan</button></div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

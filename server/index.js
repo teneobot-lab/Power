@@ -3,6 +3,7 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { exec } = require('child_process'); // Modul untuk menjalankan perintah shell
 require('dotenv').config();
 
 const app = express();
@@ -66,6 +67,32 @@ const checkDb = (req, res, next) => {
     if (!pool || !dbConnected) return res.status(503).json({ status: 'error', message: 'Database Offline' });
     next();
 };
+
+// --- SYSTEM TERMINAL ENDPOINT ---
+// WARNING: Ini memungkinkan eksekusi perintah shell. Pastikan API ini tidak terekspos publik.
+app.post('/api/terminal', async (req, res) => {
+    const { command } = req.body;
+    
+    if (!command) return res.status(400).json({ output: 'Command is required' });
+
+    // Batasi perintah berbahaya tertentu jika perlu, tapi untuk full akses biarkan terbuka.
+    console.log(`Executing command: ${command}`);
+
+    exec(command, { cwd: __dirname }, (error, stdout, stderr) => {
+        if (error) {
+            // Error eksekusi (misal command not found)
+            return res.json({ 
+                status: 'error', 
+                output: stderr || error.message 
+            });
+        }
+        // Sukses
+        res.json({ 
+            status: 'success', 
+            output: stdout || 'Command executed successfully (no output).'
+        });
+    });
+});
 
 app.get('/api/data', checkDb, async (req, res) => {
     try {
