@@ -220,8 +220,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-2">Gemini & YouTube API Key (Opsional)</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">YouTube Data API Key (Opsional)</label>
                       <input type="password" className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" placeholder="AIzaSy..." value={tempSettings.youtubeApiKey || ''} onChange={(e) => setTempSettings({...tempSettings, youtubeApiKey: e.target.value})} />
+                      <p className="text-[10px] text-slate-500 mt-2 bg-slate-50 p-2 rounded border border-slate-200">
+                         <span className="font-bold text-slate-700">Catatan AI:</span> API Key untuk <strong className="text-blue-600">Gemini AI</strong> tidak diinput di sini demi keamanan. 
+                         Harap konfigurasi Environment Variable bernama <code>VITE_API_KEY</code> di file <code>.env</code> atau dashboard hosting Anda.
+                      </p>
                     </div>
 
                     <div className="pt-4 border-t flex items-center gap-4">

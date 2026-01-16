@@ -2,6 +2,11 @@
 import { GoogleGenAI } from "@google/genai";
 import { InventoryItem } from "../types";
 
+// Check for API key presence to help debug issues
+if (!process.env.API_KEY) {
+  console.warn("⚠️ Warning: Gemini API Key is missing in environment variables (VITE_API_KEY). AI features will fail.");
+}
+
 // Initialize AI client as per @google/genai guidelines using process.env.API_KEY
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -47,7 +52,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights.";
+    return "Failed to generate insights. Check if your API Key is valid and set in .env";
   }
 };
 
@@ -93,6 +98,6 @@ export const chatWithInventoryBot = async (
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting.";
+    return "Sorry, I'm having trouble connecting to Gemini. Please check your API Key configuration in .env";
   }
 };

@@ -14,7 +14,7 @@ import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -35,6 +35,24 @@ const App: React.FC = () => {
   // UI State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  
+  // Logo State
+  const [isBlinking, setIsBlinking] = useState(false);
+
+  // Blinking Logic
+  useEffect(() => {
+    const triggerBlink = () => {
+      setIsBlinking(true);
+      setTimeout(() => setIsBlinking(false), 150); // Durasi kedip 150ms
+      
+      // Jadwalkan kedipan berikutnya secara acak antara 2 - 6 detik
+      const nextBlink = Math.random() * 4000 + 2000;
+      setTimeout(triggerBlink, nextBlink);
+    };
+
+    const initialTimer = setTimeout(triggerBlink, 3000);
+    return () => clearTimeout(initialTimer);
+  }, []);
 
   const debouncedItems = useDebounce(items, 1500);
   const debouncedTransactions = useDebounce(transactions, 1500);
@@ -153,6 +171,25 @@ const App: React.FC = () => {
     return newItems;
   };
 
+  // --- USER MANAGEMENT HANDLERS ---
+  const handleAddUser = (user: User) => {
+    setUsers(prev => [...prev, user]);
+    showToast(`User ${user.name} berhasil ditambahkan`, 'success');
+  };
+
+  const handleUpdateUser = (updatedUser: User) => {
+    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+    showToast(`Data user ${updatedUser.name} diperbarui`, 'success');
+  };
+
+  const handleDeleteUser = (id: string) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus user ini?')) {
+        setUsers(prev => prev.filter(u => u.id !== id));
+        showToast('User telah dihapus', 'warning');
+    }
+  };
+  // --------------------------------
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -163,14 +200,25 @@ const App: React.FC = () => {
         ${isSidebarCollapsed ? 'md:w-0 md:opacity-0 md:overflow-hidden' : 'md:w-64 md:opacity-100'}
         w-64`}
       >
-        <div className="h-24 flex items-center justify-center text-white shrink-0 relative border-b border-slate-800/50">
-          <div className="flex items-center justify-center p-3 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.2)] animate-pulse-slow">
-            <Eye className="w-10 h-10 text-emerald-400" strokeWidth={1.5} />
+        <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden">
+          {/* Mayan Aesthetic - Rotated Square (Diamond) */}
+          <div className="absolute w-16 h-16 border border-emerald-500/20 rotate-45 transform bg-emerald-900/10 backdrop-blur-sm" />
+          
+          {/* Mayan Aesthetic - Rotating Dashed Ring */}
+          <div className="absolute w-24 h-24 border-2 border-dashed border-emerald-500/10 rounded-full animate-[spin_12s_linear_infinite]" />
+
+          {/* Central Eye (Illuminati style) */}
+          <div className="relative z-10 p-2">
+            {isBlinking ? (
+              <EyeOff className="w-12 h-12 text-emerald-500/80 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-100" />
+            ) : (
+              <Eye className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-100" strokeWidth={1.5} />
+            )}
           </div>
           
           {/* Mobile close button */}
-          <button className="md:hidden absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}>
-            <X className="w-6 h-6" />
+          <button className="md:hidden absolute right-4 top-4 p-1 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}>
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -245,7 +293,16 @@ const App: React.FC = () => {
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
             {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser.role} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
-            {currentView === AppView.ADMIN && <AdminPanel settings={settings} onUpdateSettings={setSettings} users={users} onAddUser={() => {}} onUpdateUser={() => {}} onDeleteUser={() => {}} />}
+            {currentView === AppView.ADMIN && (
+                <AdminPanel 
+                    settings={settings} 
+                    onUpdateSettings={setSettings} 
+                    users={users} 
+                    onAddUser={handleAddUser} 
+                    onUpdateUser={handleUpdateUser} 
+                    onDeleteUser={handleDeleteUser} 
+                />
+            )}
         </div>
       </div>
     </div>
