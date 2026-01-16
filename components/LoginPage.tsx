@@ -39,7 +39,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
     setError(null);
     setIsAnimating(true);
 
-    // Hapus spasi di awal/akhir (Sering terjadi di keyboard HP/Tablet)
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
 
@@ -47,7 +46,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
         if (!cleanUsername) throw new Error('Username wajib diisi');
         if (!cleanPassword) throw new Error('Password wajib diisi');
 
-        // Cari user berdasarkan username
         const foundUser = users.find(u => u.username.toLowerCase() === cleanUsername.toLowerCase());
 
         if (foundUser) {
@@ -55,14 +53,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                  throw new Error('Akun ini telah dinonaktifkan. Hubungi Admin.');
             } 
             
-            // Verifikasi Hash Password
             try {
                 const isValid = await verifyPassword(cleanPassword, foundUser.password || '');
                 
                 if (isValid) {
                     onLogin(foundUser);
                 } else {
-                    // Pesan error spesifik jika di HTTP dan bukan password default
                     if (cryptoWarning && cleanPassword !== 'admin22') {
                         throw new Error('Di koneksi HTTP, hanya password default (admin22) yang didukung. Harap gunakan HTTPS untuk password kustom.');
                     }
@@ -74,7 +70,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             }
         } else {
              if (users.length === 0) {
-                 throw new Error('Database user kosong/belum termuat. Cek koneksi server di tombol gear pojok kanan atas.');
+                 throw new Error('Database user kosong/belum termuat. Cek tombol gear di pojok kanan atas > Tes Koneksi.');
              }
              throw new Error('Username tidak ditemukan.');
         }
@@ -109,18 +105,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
-      {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 rounded-full blur-[120px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
       </div>
 
-      {/* Main Login Card */}
       <div className="w-full max-w-md bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl p-8 relative z-10 animate-in fade-in zoom-in duration-500">
         <button 
             onClick={() => setIsConfigOpen(true)}
             className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-full transition-all"
-            title="Konfigurasi Server"
+            title="Konfigurasi Server & Cek Database"
         >
             <Settings className="w-5 h-5" />
         </button>
@@ -222,12 +216,12 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
             <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
                 <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-                    <h3 className="font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Konfigurasi Server</h3>
+                    <h3 className="font-bold text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Konfigurasi & Debug</h3>
                     <button onClick={() => setIsConfigOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-white" /></button>
                 </div>
                 <div className="p-6 space-y-4">
                     <p className="text-xs text-slate-400 mb-2">
-                        Masukkan URL API VPS atau gunakan tanda <code>/</code> untuk koneksi otomatis (Proxy).
+                        Masukkan URL API VPS atau gunakan tanda <code>/</code> untuk koneksi otomatis.
                     </p>
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">VPS API URL</label>
@@ -239,9 +233,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                                 onChange={(e) => setTempVpsUrl(e.target.value)}
                             />
                         </div>
-                        <p className="text-[10px] text-slate-500 mt-2">
-                            Tips: Masukkan <code className="text-white font-mono bg-slate-800 px-1 rounded">/</code> jika aplikasi di-hosting satu domain dengan backend atau menggunakan Proxy Mode.
-                        </p>
                     </div>
                     
                     <div className="flex gap-2 mt-4">
@@ -257,6 +248,33 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                             {connectionMsg}
                         </div>
                     )}
+
+                    {/* USER DEBUG LIST SECTION */}
+                    <div className="mt-4 pt-4 border-t border-slate-800">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-2">Database Users ({users.length})</h4>
+                        {users.length === 0 ? (
+                            <p className="text-xs text-rose-400 italic">Database user kosong. Jalankan server backend.</p>
+                        ) : (
+                            <div className="bg-black/40 rounded p-2 max-h-32 overflow-y-auto custom-scrollbar">
+                                {users.map((u) => (
+                                    <div key={u.id} className="flex justify-between items-center text-xs text-slate-300 py-1 border-b border-white/5 last:border-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-mono text-emerald-500">{u.id}</span>
+                                            <span className="font-bold">{u.username}</span>
+                                            <span className="text-[10px] text-slate-500">({u.role})</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {/* Show partial hash status */}
+                                            <span className="text-[9px] font-mono text-slate-600">
+                                                {u.password && u.password.length > 20 ? 'HASHED' : 'PLAIN/UNSAFE'}
+                                            </span>
+                                            <span className={`w-2 h-2 rounded-full ${u.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'}`} title={u.status} />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-800 flex justify-end gap-3">
                         <button onClick={() => setIsConfigOpen(false)} className="px-4 py-2 text-slate-400 text-xs font-bold hover:text-white">Batal</button>

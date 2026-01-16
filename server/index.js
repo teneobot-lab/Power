@@ -69,24 +69,20 @@ const checkDb = (req, res, next) => {
 };
 
 // --- SYSTEM TERMINAL ENDPOINT ---
-// WARNING: Ini memungkinkan eksekusi perintah shell. Pastikan API ini tidak terekspos publik.
 app.post('/api/terminal', async (req, res) => {
     const { command } = req.body;
     
     if (!command) return res.status(400).json({ output: 'Command is required' });
 
-    // Batasi perintah berbahaya tertentu jika perlu, tapi untuk full akses biarkan terbuka.
     console.log(`Executing command: ${command}`);
 
     exec(command, { cwd: __dirname }, (error, stdout, stderr) => {
         if (error) {
-            // Error eksekusi (misal command not found)
             return res.json({ 
                 status: 'error', 
                 output: stderr || error.message 
             });
         }
-        // Sukses
         res.json({ 
             status: 'success', 
             output: stdout || 'Command executed successfully (no output).'
@@ -102,15 +98,23 @@ app.get('/api/data', checkDb, async (req, res) => {
         const [rejLogs] = await pool.query('SELECT * FROM rejects ORDER BY timestamp DESC');
         const [sup] = await pool.query('SELECT * FROM suppliers');
         
-        // Auto-Create Admin if Users Empty
+        // --- AUTO-FIX USER & CREATE ADMIN ---
         let [usr] = await pool.query('SELECT * FROM users');
+        const ADMIN_HASH = '3d3467611599540c49097e3a2779836183c50937617565437172083626217315';
+
         if (usr.length === 0) {
              console.log("⚠️ Users table empty. Creating default admin...");
-             // Hash for 'admin22': 3d3467611599540c49097e3a2779836183c50937617565437172083626217315
-             const defaultAdminSql = "INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 'admin', 'active', NOW())";
-             await pool.query(defaultAdminSql);
-             // Re-fetch
-             [usr] = await pool.query('SELECT * FROM users');
+             const defaultAdminSql = "INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', ?, 'admin', 'active', NOW())";
+             await pool.query(defaultAdminSql, [ADMIN_HASH]);
+             [usr] = await pool.query('SELECT * FROM users'); // Re-fetch
+        } else {
+             // AUTO-FIX: Cek jika ada user admin yang passwordnya masih 'admin22' (Plain Text) dan ubah ke Hash
+             const adminUser = usr.find(u => u.username === 'admin');
+             if (adminUser && adminUser.password === 'admin22') {
+                 console.log("⚠️ Mendeteksi password admin belum di-hash. Memperbaiki otomatis...");
+                 await pool.query('UPDATE users SET password = ? WHERE username = ?', [ADMIN_HASH, 'admin']);
+                 [usr] = await pool.query('SELECT * FROM users'); // Re-fetch
+             }
         }
 
         const [setRows] = await pool.query('SELECT * FROM settings');
@@ -181,8 +185,6 @@ app.post('/api/sync', checkDb, async (req, res) => {
                     let v = item[k];
                     if (typeof v === 'object' && v !== null) return JSON.stringify(v);
                     
-                    // FIXED REGEX: Hanya bersihkan string jika benar-benar format ISO Date (YYYY-MM-DDTHH:mm:ss)
-                    // Ini mencegah korupsi pada nama barang yang mengandung huruf 'T'
                     const isIsoDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
                     if (isIsoDate) return v.slice(0, 19).replace('T', ' ');
                     

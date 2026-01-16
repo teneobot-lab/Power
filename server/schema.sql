@@ -74,5 +74,6 @@ CREATE TABLE IF NOT EXISTS settings (
     setting_value LONGTEXT
 );
 
+-- Hashed password for 'admin22'
 INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) 
-VALUES ('1', 'Admin Utama', 'admin', 'admin22', 'admin', 'active', NOW());
+VALUES ('1', 'Admin Utama', 'admin', '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 'admin', 'active', NOW());
