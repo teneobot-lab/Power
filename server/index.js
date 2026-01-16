@@ -3,15 +3,16 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// Konfigurasi Database (Root tanpa password default)
+// Konfigurasi Database
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
@@ -34,7 +35,6 @@ async function initDb() {
     } catch (err) {
         console.error('❌ DATABASE ERROR:', err.message);
         dbConnected = false;
-        // Retry setiap 5 detik jika gagal
         setTimeout(initDb, 5000); 
     }
 }
@@ -55,28 +55,18 @@ const toCamel = (row) => {
 
 // --- ROUTES API ---
 
-// 1. Cek Status Server (Health Check)
 app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        message: 'SmartStock Server Berjalan!',
-        port: PORT,
-        database_status: dbConnected ? 'CONNECTED' : 'DISCONNECTED (Retrying...)'
+        database_status: dbConnected ? 'CONNECTED' : 'DISCONNECTED'
     });
 });
 
-// Middleware Check DB
 const checkDb = (req, res, next) => {
-    if (!pool || !dbConnected) {
-        return res.status(503).json({ 
-            status: 'error', 
-            message: 'Database belum terhubung. Pastikan MySQL berjalan dan user/pass benar.' 
-        });
-    }
+    if (!pool || !dbConnected) return res.status(503).json({ status: 'error', message: 'Database Offline' });
     next();
 };
 
-// 2. Ambil Data
 app.get('/api/data', checkDb, async (req, res) => {
     try {
         const [inv] = await pool.query('SELECT * FROM inventory');
@@ -107,12 +97,10 @@ app.get('/api/data', checkDb, async (req, res) => {
             }
         });
     } catch (e) {
-        console.error('GET Error:', e);
         res.status(500).json({ status: 'error', message: e.message });
     }
 });
 
-// 3. Sync Data
 app.post('/api/sync', checkDb, async (req, res) => {
     const { type, data } = req.body;
     const conn = await pool.getConnection();
@@ -155,12 +143,10 @@ app.post('/api/sync', checkDb, async (req, res) => {
                     let v = item[k];
                     if (typeof v === 'object' && v !== null) return JSON.stringify(v);
                     
-                    // FIXED: Hanya bersihkan string jika itu adalah format ISO Date yang valid (mengandung T dan mengikuti pola tanggal)
-                    // Sebelumnya v.includes('T') tanpa regex merusak nama barang panjang yang mengandung huruf T
+                    // FIXED REGEX: Hanya bersihkan string jika benar-benar format ISO Date (YYYY-MM-DDTHH:mm:ss)
+                    // Ini mencegah korupsi pada nama barang yang mengandung huruf 'T'
                     const isIsoDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
-                    if (isIsoDate) {
-                        return v.slice(0, 19).replace('T', ' ');
-                    }
+                    if (isIsoDate) return v.slice(0, 19).replace('T', ' ');
                     
                     return v;
                 }));
@@ -168,21 +154,17 @@ app.post('/api/sync', checkDb, async (req, res) => {
             }
         }
         await conn.commit();
-        console.log(`✅ SYNC: ${type}`);
         res.json({ status: 'success' });
     } catch (e) {
         await conn.rollback();
-        console.error(`❌ SYNC FAIL:`, e.message);
         res.status(500).json({ status: 'error', message: e.message });
     } finally {
         conn.release();
     }
 });
 
-// PENTING: Start Server SEBELUM Database connect
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 SERVER BERJALAN DI PORT ${PORT}`);
+    console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
 });
 
-// Mulai koneksi database di background
 initDb();
