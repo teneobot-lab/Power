@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from '../types';
-import { generateId } from './utils/storageUtils';
-import { checkServerConnection } from './services/api';
+import { generateId } from '../utils/storageUtils';
+import { checkServerConnection } from '../services/api';
 import { Save, Shield, Plus, Edit2, Trash2, X, Settings, MonitorPlay, Globe, Loader2, Wifi, Youtube, Video, Link, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database } from 'lucide-react';
 
 interface AdminPanelProps {
