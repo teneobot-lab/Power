@@ -28,7 +28,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
   const [cryptoWarning, setCryptoWarning] = useState(false);
 
   useEffect(() => {
-    // Check for Secure Context (HTTPS or Localhost) because Web Crypto API requires it
+    // Deteksi jika browser memblokir Crypto API (Biasanya karena HTTP non-localhost)
     if (typeof crypto !== 'undefined' && typeof crypto.subtle === 'undefined' && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
         setCryptoWarning(true);
     }
@@ -39,12 +39,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
     setError(null);
     setIsAnimating(true);
 
+    // Hapus spasi di awal/akhir (Sering terjadi di keyboard HP/Tablet)
+    const cleanUsername = username.trim();
+    const cleanPassword = password.trim();
+
     try {
-        if (!username.trim()) throw new Error('Username wajib diisi');
-        if (!password.trim()) throw new Error('Password wajib diisi');
+        if (!cleanUsername) throw new Error('Username wajib diisi');
+        if (!cleanPassword) throw new Error('Password wajib diisi');
 
         // Cari user berdasarkan username
-        const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+        const foundUser = users.find(u => u.username.toLowerCase() === cleanUsername.toLowerCase());
 
         if (foundUser) {
             if (foundUser.status === 'inactive') {
@@ -53,22 +57,24 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             
             // Verifikasi Hash Password
             try {
-                const isValid = await verifyPassword(password, foundUser.password || '');
+                const isValid = await verifyPassword(cleanPassword, foundUser.password || '');
+                
                 if (isValid) {
                     onLogin(foundUser);
                 } else {
+                    // Pesan error spesifik jika di HTTP dan bukan password default
+                    if (cryptoWarning && cleanPassword !== 'admin22') {
+                        throw new Error('Di koneksi HTTP, hanya password default (admin22) yang didukung. Harap gunakan HTTPS untuk password kustom.');
+                    }
                     throw new Error('Password yang Anda masukkan salah.');
                 }
             } catch (hashError: any) {
-                console.error("Hash error:", hashError);
-                if (hashError.message && hashError.message.includes("subtle")) {
-                    throw new Error("Browser Anda memblokir fitur login di koneksi HTTP (Tidak Aman). Gunakan HTTPS atau Localhost.");
-                }
+                console.error("Login Error:", hashError);
                 throw hashError;
             }
         } else {
              if (users.length === 0) {
-                 throw new Error('Database user kosong/belum termuat. Coba refresh atau cek koneksi server.');
+                 throw new Error('Database user kosong/belum termuat. Cek koneksi server di tombol gear pojok kanan atas.');
              }
              throw new Error('Username tidak ditemukan.');
         }
@@ -130,9 +136,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
         {cryptoWarning && (
             <div className="mb-6 bg-amber-500/20 border border-amber-500/30 p-4 rounded-xl flex gap-3 animate-pulse">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                <p className="text-xs text-amber-200">
-                    <strong>Peringatan Keamanan:</strong> Anda mengakses via HTTP (Tidak Aman). Login mungkin gagal karena browser memblokir fitur enkripsi password. Harap gunakan <strong>HTTPS</strong> atau akses via <strong>localhost</strong>.
-                </p>
+                <div className="text-xs text-amber-200">
+                    <strong>Mode HTTP (Tidak Aman):</strong> Browser membatasi fitur enkripsi.
+                    <br/>Untuk login, mohon gunakan password default: <strong>admin22</strong>
+                </div>
             </div>
         )}
 
@@ -172,8 +179,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
 
             {error && (
                 <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2 animate-in slide-in-from-top-2">
-                    <AlertCircle className="w-4 h-4" />
-                    {error}
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{error}</span>
                 </div>
             )}
 
@@ -265,7 +272,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
   );
 };
 
-// Helper for AlertTriangle icon which was missing in original imports
+// Helper for AlertTriangle icon
 const AlertTriangle = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
 );
