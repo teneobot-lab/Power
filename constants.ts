@@ -1,15 +1,15 @@
 
 import { InventoryItem, Supplier, User, AppSettings, TablePreferences } from './types';
 
-export const INITIAL_INVENTORY: InventoryItem[] = []; // Kosongkan initial state agar tidak bingung dengan data DB
+export const INITIAL_INVENTORY: InventoryItem[] = [];
 
 export const INITIAL_SUPPLIERS: Supplier[] = [];
 
 export const INITIAL_USERS: User[] = [
   {
     id: '1',
-    name: 'Admin',
-    email: 'admin@smartstock.com',
+    name: 'Admin Utama',
+    username: 'admin', // Menggunakan username sederhana sesuai request
     role: 'admin',
     status: 'active',
     lastLogin: new Date().toISOString()
@@ -17,7 +17,6 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  // Gunakan '/' agar request diarahkan ke Vercel Proxy (sesuai vercel.json)
   viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',

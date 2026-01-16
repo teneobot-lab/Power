@@ -19,7 +19,6 @@ export interface InventoryItem {
   status?: 'active' | 'inactive'; 
 }
 
-// Independent Master Data for Rejects
 export interface RejectItem {
   id: string;
   name: string;
@@ -46,7 +45,7 @@ export type UserRole = 'admin' | 'staff' | 'viewer';
 export interface User {
   id: string;
   name: string;
-  email: string;
+  username: string; // Diubah dari email ke username
   role: UserRole;
   status: 'active' | 'inactive';
   lastLogin?: string;
