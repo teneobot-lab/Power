@@ -9,7 +9,8 @@ export const INITIAL_USERS: User[] = [
   {
     id: '1',
     name: 'Admin Utama',
-    username: 'admin', // Menggunakan username sederhana sesuai request
+    username: 'admin',
+    password: 'admin22', // As requested
     role: 'admin',
     status: 'active',
     lastLogin: new Date().toISOString()

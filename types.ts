@@ -45,7 +45,8 @@ export type UserRole = 'admin' | 'staff' | 'viewer';
 export interface User {
   id: string;
   name: string;
-  username: string; // Diubah dari email ke username
+  username: string; 
+  password?: string; // Added password field
   role: UserRole;
   status: 'active' | 'inactive';
   lastLogin?: string;

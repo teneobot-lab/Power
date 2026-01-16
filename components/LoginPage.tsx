@@ -21,6 +21,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
     setError(null);
     setIsAnimating(true);
 
+    // Simulate network delay for better UX
     setTimeout(() => {
         if (!username.trim()) {
             setError('Username wajib diisi');
@@ -28,15 +29,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             return;
         }
 
-        // Cari user berdasarkan username yang sudah kita refactor di types.ts
+        if (!password.trim()) {
+            setError('Password wajib diisi');
+            setIsAnimating(false);
+            return;
+        }
+
+        // Cari user berdasarkan username
         const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
 
         if (foundUser) {
             if (foundUser.status === 'inactive') {
                 setError('Akun ini telah dinonaktifkan. Hubungi Admin.');
                 setIsAnimating(false);
-            } else {
+            } else if (foundUser.password === password) {
+                // Login successful
                 onLogin(foundUser);
+            } else {
+                setError('Password yang Anda masukkan salah.');
+                setIsAnimating(false);
             }
         } else {
             setError('Username tidak ditemukan.');
@@ -47,6 +58,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
 
   return (
     <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Background Effects */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 rounded-full blur-[120px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-blue-500/10 rounded-full blur-[120px]" />
@@ -96,7 +108,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             </div>
 
             {error && (
-                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-400 px-4 py-3 rounded-xl text-sm flex items-center gap-2 animate-in slide-in-from-top-2">
                     <AlertCircle className="w-4 h-4" />
                     {error}
                 </div>
@@ -105,12 +117,24 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             <button 
                 type="submit" 
                 disabled={isAnimating || isLoadingData}
-                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
+                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2 active:scale-95"
             >
-                {isAnimating ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <LogIn className="w-5 h-5" />}
-                Masuk Aplikasi
+                {isAnimating ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                    <>
+                        <LogIn className="w-5 h-5" />
+                        Masuk Aplikasi
+                    </>
+                )}
             </button>
         </form>
+
+        <div className="mt-8 pt-6 border-t border-white/5 text-center">
+            <p className="text-slate-500 text-xs">
+                SmartStock System v1.2
+            </p>
+        </div>
       </div>
     </div>
   );
