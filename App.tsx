@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InventoryItem, AppView, Transaction, Supplier, User, AppSettings, ToastMessage, ToastType, TablePreferences, RejectLog, RejectItem } from './types';
 import { INITIAL_INVENTORY, INITIAL_SUPPLIERS, INITIAL_USERS, DEFAULT_SETTINGS, DEFAULT_TABLE_PREFS } from './constants';
-import { loadFromStorage, saveToStorage } from './utils/storageUtils';
+import { loadFromStorage, saveToStorage, clearStorage } from './utils/storageUtils';
 import { fetchBackendData, syncBackendData } from './services/api';
 import useDebounce from './hooks/useDebounce';
 import Dashboard from './components/Dashboard';
@@ -13,8 +13,9 @@ import RejectManager from './components/RejectManager';
 import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
+import LoginPage from './components/LoginPage';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -25,7 +26,11 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [tablePrefs, setTablePrefs] = useState<TablePreferences>(DEFAULT_TABLE_PREFS);
-  const [currentUser] = useState<User>(INITIAL_USERS[0]); 
+  
+  // Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,9 +48,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const triggerBlink = () => {
       setIsBlinking(true);
-      setTimeout(() => setIsBlinking(false), 150); // Durasi kedip 150ms
-      
-      // Jadwalkan kedipan berikutnya secara acak antara 2 - 6 detik
+      setTimeout(() => setIsBlinking(false), 150);
       const nextBlink = Math.random() * 4000 + 2000;
       setTimeout(triggerBlink, nextBlink);
     };
@@ -82,10 +85,23 @@ const App: React.FC = () => {
       setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
       setRejectLogs(loadFromStorage('smartstock_rejects', []));
       setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
-      setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
+      const localUsers = loadFromStorage('smartstock_users', INITIAL_USERS);
+      setUsers(localUsers);
       setSettings(localSettings);
 
-      // Ambil data dari VPS jika ada URL (termasuk '/')
+      // Cek Session Login
+      const storedUserId = localStorage.getItem('smartstock_active_user');
+      if (storedUserId) {
+         const activeUser = localUsers.find((u: User) => u.id === storedUserId);
+         if (activeUser && activeUser.status === 'active') {
+             setCurrentUser(activeUser);
+         } else {
+             localStorage.removeItem('smartstock_active_user');
+         }
+      }
+      setIsAuthChecking(false);
+
+      // Ambil data dari VPS jika ada URL
       if (localSettings.viteGasUrl) {
         try {
           const cloudData = await fetchBackendData(localSettings.viteGasUrl);
@@ -97,10 +113,17 @@ const App: React.FC = () => {
             setSuppliers(cloudData.suppliers || []);
             setUsers(cloudData.users || []);
             setSettings(prev => ({ ...prev, ...cloudData.settings }));
+            
+            // Re-validate session with cloud data
+            if (storedUserId) {
+                const cloudUser = cloudData.users.find((u: User) => u.id === storedUserId);
+                if (cloudUser && cloudUser.status === 'active') setCurrentUser(cloudUser);
+                else { setCurrentUser(null); localStorage.removeItem('smartstock_active_user'); }
+            }
+
             setIsCloudConnected(true);
             showToast('Cloud data sinkron', 'success');
           } else {
-            // Jika fetch mengembalikan null (error/HTML), tetap di mode lokal
             setIsCloudConnected(false);
           }
         } catch (e) {
@@ -180,15 +203,55 @@ const App: React.FC = () => {
   const handleUpdateUser = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     showToast(`Data user ${updatedUser.name} diperbarui`, 'success');
+    // Jika user yang diedit adalah user yang sedang login, update state currentUser
+    if (currentUser && currentUser.id === updatedUser.id) {
+        setCurrentUser(updatedUser);
+    }
   };
 
   const handleDeleteUser = (id: string) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus user ini?')) {
         setUsers(prev => prev.filter(u => u.id !== id));
         showToast('User telah dihapus', 'warning');
+        if (currentUser && currentUser.id === id) {
+            handleLogout();
+        }
     }
   };
-  // --------------------------------
+
+  // --- AUTH HANDLERS ---
+  const handleLogin = (user: User) => {
+      setCurrentUser(user);
+      localStorage.setItem('smartstock_active_user', user.id);
+      
+      // Update last login
+      const updatedUser = { ...user, lastLogin: new Date().toISOString() };
+      handleUpdateUser(updatedUser);
+      
+      showToast(`Selamat datang, ${user.name}`, 'success');
+  };
+
+  const handleLogout = () => {
+      setCurrentUser(null);
+      localStorage.removeItem('smartstock_active_user');
+      showToast('Logout berhasil', 'info');
+  };
+
+  // Render Login Page jika belum login
+  if (!currentUser && !isAuthChecking) {
+      return (
+        <LoginPage 
+            users={users} 
+            onLogin={handleLogin} 
+            isLoadingData={isLoading}
+        />
+      );
+  }
+
+  // Jika sedang checking auth (flash screen kecil agar tidak flicker)
+  if (isAuthChecking) {
+      return <div className="h-screen bg-slate-900 flex items-center justify-center"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>;
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
@@ -222,7 +285,7 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden flex flex-col">
           <button onClick={() => { setCurrentView(AppView.DASHBOARD); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.DASHBOARD ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5 shrink-0" /><span className="font-medium">Dashboard</span></button>
           <button onClick={() => { setCurrentView(AppView.INVENTORY); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.INVENTORY ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Package className="w-5 h-5 shrink-0" /><span className="font-medium">Inventory</span></button>
           <button onClick={() => { setCurrentView(AppView.TRANSACTIONS); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.TRANSACTIONS ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><ArrowRightLeft className="w-5 h-5 shrink-0" /><span className="font-medium">Transaksi</span></button>
@@ -231,11 +294,20 @@ const App: React.FC = () => {
           <button onClick={() => { setCurrentView(AppView.SUPPLIERS); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.SUPPLIERS ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Users className="w-5 h-5 shrink-0" /><span className="font-medium">Suppliers</span></button>
           <button onClick={() => { setCurrentView(AppView.AI_ASSISTANT); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.AI_ASSISTANT ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Bot className="w-5 h-5 shrink-0" /><span className="font-medium">AI Agent</span></button>
           
-          {currentUser.role === 'admin' && (
+          {currentUser?.role === 'admin' && (
              <div className="pt-4 mt-4 border-t border-slate-800">
                 <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.ADMIN ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><ShieldCheck className="w-5 h-5 shrink-0" /><span className="font-medium">Admin Panel</span></button>
              </div>
           )}
+
+          <div className="mt-auto pt-4 border-t border-slate-800">
+             <div className="px-3 py-2 bg-slate-800/50 rounded-lg mb-2">
+                 <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Logged in as</div>
+                 <div className="text-sm font-bold text-white truncate">{currentUser?.name}</div>
+                 <div className="text-[10px] text-emerald-400">{currentUser?.role}</div>
+             </div>
+             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 transition-colors"><LogOut className="w-5 h-5 shrink-0" /><span className="font-medium">Logout</span></button>
+          </div>
         </nav>
       </aside>
 
@@ -271,13 +343,13 @@ const App: React.FC = () => {
             {currentView === AppView.INVENTORY && (
                 <InventoryTable 
                   items={items} onAddItem={addItem} onUpdateItem={updateItem} onDeleteItem={deleteItem} 
-                  userRole={currentUser.role} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
+                  userRole={currentUser?.role || 'viewer'} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
                 />
             )}
             {currentView === AppView.TRANSACTIONS && (
                 <TransactionManager 
                   inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={() => {}} 
-                  userRole={currentUser.role} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)}
+                  userRole={currentUser?.role || 'viewer'} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)}
                 />
             )}
             {currentView === AppView.REJECT && (
@@ -287,11 +359,11 @@ const App: React.FC = () => {
                     onUpdateRejectLog={(updatedLog) => setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l))}
                     onDeleteRejectLog={(id) => setRejectLogs(prev => prev.filter(l => l.id !== id))}
                     onUpdateRejectMaster={setRejectItems}
-                    userRole={currentUser.role} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} 
+                    userRole={currentUser?.role || 'viewer'} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} 
                 />
             )}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
-            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser.role} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
+            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser?.role || 'viewer'} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
             {currentView === AppView.ADMIN && (
                 <AdminPanel 
