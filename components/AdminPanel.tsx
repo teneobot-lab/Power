@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from '../types';
 import { generateId } from '../utils/storageUtils';
 import { checkServerConnection } from '../services/api';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2 } from 'lucide-react';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, Terminal, Copy, FileJson, FileText, Cpu, ChevronRight, Play, Trash2, Activity, HardDrive, Power, Edit2, Wrench } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -111,7 +111,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           });
 
           if (!response.ok) {
-              throw new Error(`HTTP Error: ${response.status}`);
+              if (response.status === 404) {
+                  addTerminalLog(`EXECUTION ERROR: Endpoint 404 Not Found.`);
+                  addTerminalLog(`---------------------------------------------------`);
+                  addTerminalLog(`DIAGNOSIS: Server backend Anda belum memiliki fitur Terminal.`);
+                  addTerminalLog(`SOLUSI:`);
+                  addTerminalLog(`1. Buka tab 'Setup & Migrasi' di menu sebelah kiri.`);
+                  addTerminalLog(`2. Salin kode terbaru 'index.js'.`);
+                  addTerminalLog(`3. Update file index.js di VPS Anda dan restart server.`);
+                  addTerminalLog(`---------------------------------------------------`);
+                  // Show button to jump to migration tab
+                  throw new Error("Terminal endpoint missing (404). Update server code.");
+              }
+              throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
           }
 
           const data = await response.json();
@@ -121,8 +133,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
               addTerminalLog("No output returned.");
           }
       } catch (error: any) {
-          addTerminalLog(`EXECUTION ERROR: ${error.message}`);
-          addTerminalLog("Ensure Backend URL is correct and server is running.");
+          addTerminalLog(`ERROR: ${error.message}`);
       } finally {
           setIsExecutingCmd(false);
       }
@@ -384,13 +395,30 @@ initDb();`;
                           </p>
                           <div className="p-4 bg-rose-50 rounded-xl border border-rose-100 text-xs text-rose-800 leading-relaxed">
                               <AlertCircle className="w-4 h-4 inline mr-1 mb-0.5" />
-                              <strong>PERINGATAN:</strong> Anda memiliki akses root/sudo. Perintah berbahaya (seperti rm -rf) akan dieksekusi tanpa konfirmasi. Jangan gunakan <code>nano</code> atau perintah interaktif lainnya.
+                              <strong>PERINGATAN:</strong> Anda memiliki akses root/sudo. Perintah berbahaya (seperti rm -rf) akan dieksekusi tanpa konfirmasi.
                           </div>
                       </div>
 
                       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
                           <h2 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2">
                               <Activity className="w-5 h-5 text-emerald-600" />
+                              Troubleshoot
+                          </h2>
+                          <div className="space-y-2">
+                              <button onClick={() => setActiveTab('migration')} className="w-full p-3 bg-amber-50 border border-amber-100 hover:bg-amber-100 rounded-xl flex items-center gap-3 transition-all text-left">
+                                  <Wrench className="w-5 h-5 text-amber-600" />
+                                  <div className="flex-1">
+                                      <div className="text-xs font-bold text-slate-700">Perbaiki Error 404</div>
+                                      <div className="text-[10px] text-slate-500">Update index.js di VPS</div>
+                                  </div>
+                                  <ChevronRight className="w-4 h-4 text-amber-400" />
+                              </button>
+                          </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                          <h2 className="text-lg font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+                              <Activity className="w-5 h-5 text-blue-600" />
                               Quick Commands
                           </h2>
                           <div className="grid grid-cols-2 gap-3">
@@ -428,7 +456,7 @@ initDb();`;
                       </div>
                       <div className="flex-1 p-4 overflow-y-auto space-y-1 text-slate-300 custom-scrollbar" style={{fontFamily: "'Consolas', 'Monaco', monospace"}}>
                           {terminalLogs.map((log, i) => (
-                              <div key={i} className={`whitespace-pre-wrap break-all ${log.includes('ERROR') ? 'text-rose-400' : 'text-slate-300'}`}>
+                              <div key={i} className={`whitespace-pre-wrap break-all ${log.includes('ERROR') ? 'text-rose-400 font-bold' : log.includes('SOLUSI') ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>
                                   {log}
                               </div>
                           ))}
@@ -455,11 +483,11 @@ initDb();`;
                 <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                     <h2 className="text-xl font-extrabold text-slate-800 mb-4 flex items-center gap-3">
                         <ServerCrash className="w-7 h-7 text-amber-600" /> 
-                        Inisialisasi VPS Baru
+                        Inisialisasi VPS Baru (Perbaikan 404)
                     </h2>
                     <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-                        Gunakan script di bawah ini untuk membangun ulang backend di VPS baru Anda. 
-                        Pastikan Node.js dan MySQL sudah terinstall di VPS.
+                        Jika Anda mengalami <strong>Error 404</strong> pada terminal, itu berarti kode server (index.js) di VPS Anda belum mendukung fitur ini. 
+                        Silakan update file <strong>index.js</strong> dengan kode di bawah ini.
                     </p>
 
                     <div className="space-y-12">
@@ -528,9 +556,12 @@ initDb();`;
                         {/* index.js */}
                         <section className="pt-8 border-t">
                             <div className="flex items-center justify-between mb-4">
-                                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                    <FileCode className="w-4 h-4 text-amber-500" /> index.js (API Backend)
-                                </h3>
+                                <div className="flex flex-col">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <FileCode className="w-4 h-4 text-amber-500" /> index.js (API Backend)
+                                    </h3>
+                                    <span className="text-[10px] text-rose-500 font-bold mt-1">PENTING: Update file ini untuk memperbaiki error 404 Terminal</span>
+                                </div>
                                 <button onClick={() => copyToClipboard(indexJsCode)} className="text-[10px] bg-blue-600 text-white px-4 py-1.5 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-1.5 shadow-md">
                                     <Copy className="w-3.5 h-3.5" /> Salin Kode
                                 </button>
@@ -551,7 +582,7 @@ initDb();`;
                                 <div className="bg-slate-900 p-4 rounded-xl space-y-2">
                                     <code className="block text-emerald-400 text-xs font-mono">npm install</code>
                                     <code className="block text-emerald-400 text-xs font-mono">node setupDb.js</code>
-                                    <code className="block text-white text-xs font-mono font-bold mt-2">npm start</code>
+                                    <code className="block text-white text-xs font-mono font-bold mt-2">node index.js</code>
                                 </div>
                                 <div className="flex items-center gap-2 text-[10px] text-emerald-600 font-bold uppercase">
                                     <CheckCircle2 className="w-3.5 h-3.5" /> Server akan berjalan di port 3000.
