@@ -68,31 +68,29 @@ const App: React.FC = () => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const loadData = useCallback(async (targetUrl?: string) => {
+  const loadData = useCallback(async (customSettings?: AppSettings) => {
     setIsLoading(true);
-    const savedSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
-    const activeUrl = targetUrl || savedSettings.viteGasUrl;
+    const activeSettings = customSettings || loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
+    const vpsUrl = activeSettings.vpsApiUrl;
     
-    // Load local data first as fallback
-    if (!targetUrl) {
+    // Load local first
+    if (!customSettings) {
         setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
         setTransactions(loadFromStorage('smartstock_transactions', []));
         setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
         setRejectLogs(loadFromStorage('smartstock_rejects', []));
         setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
         setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
-        setSettings(savedSettings);
-        setTablePrefs(loadFromStorage('smartstock_table_prefs', DEFAULT_TABLE_PREFS));
+        setSettings(activeSettings);
     }
 
-    // Attempt Cloud Connection if URL exists
-    if (activeUrl && activeUrl.trim().length > 0) {
+    if (vpsUrl && vpsUrl.trim().length > 0) {
       try {
-        const conn = await checkServerConnection(activeUrl);
+        const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
 
         if (conn.online) {
-          const cloudData = await fetchBackendData(activeUrl);
+          const cloudData = await fetchBackendData(vpsUrl);
           if (cloudData) {
             setItems(cloudData.inventory || []);
             setTransactions(cloudData.transactions || []);
@@ -100,14 +98,9 @@ const App: React.FC = () => {
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
             setUsers(cloudData.users || []);
-            if (!targetUrl) setSettings(prev => ({ ...prev, ...cloudData.settings }));
             
             setIsCloudConnected(true);
-            if (conn.dbStatus === 'CONNECTED') {
-                showToast('Cloud & Database Terhubung', 'success');
-            } else {
-                showToast('Server Aktif, Database MySQL Terputus', 'warning');
-            }
+            if (conn.dbStatus === 'CONNECTED') showToast('Koneksi VPS & MySQL Aktif', 'success');
           } else {
             setIsCloudConnected(false);
           }
@@ -115,7 +108,6 @@ const App: React.FC = () => {
           setIsCloudConnected(false);
         }
       } catch (error) {
-        console.error("Connection Error:", error);
         setIsCloudConnected(false);
       }
     } else {
@@ -128,23 +120,25 @@ const App: React.FC = () => {
 
   const handleUpdateSettings = (newSettings: AppSettings) => {
       setSettings(newSettings);
-      loadData(newSettings.viteGasUrl);
+      loadData(newSettings);
   };
 
   const isMounted = useRef(false);
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
+  // Real-time sync ke VPS (MySQL)
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.viteGasUrl && dbStatus === 'CONNECTED') {
+    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && dbStatus === 'CONNECTED') {
       setIsSaving(true);
-      await syncBackendData(settings.viteGasUrl, type as any, data);
+      await syncBackendData(settings.vpsApiUrl, type as any, data);
       setIsSaving(false);
     }
   };
 
+  // Sinkronisasi manual ke Google Sheets (GAS)
   const handleFullSync = async () => {
-    if (!settings.viteGasUrl || settings.viteGasUrl.trim().length === 0) {
-        showToast('URL Server/GAS belum dikonfigurasi', 'error');
+    if (!settings.viteGasUrl || !settings.viteGasUrl.includes('script.google.com')) {
+        showToast('URL Google Apps Script belum dikonfigurasi!', 'warning');
         return false;
     }
     
@@ -161,16 +155,20 @@ const App: React.FC = () => {
         };
         
         const result = await syncBackendData(settings.viteGasUrl, 'full_sync' as any, fullData);
+        
         if (result.success) {
-            showToast('Seluruh data berhasil disinkronkan ke Spreadsheet', 'success');
+            showToast('Sync Google Sheets Berhasil!', 'success');
             setSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
             return true;
         } else {
-            showToast('Gagal sinkronisasi: ' + result.message, 'error');
+            const errorMsg = result.message || 'Error tidak diketahui pada server GAS.';
+            showToast('Gagal Sync ke Spreadsheet: ' + errorMsg, 'error');
+            console.error("GAS Sync Result Error:", result);
             return false;
         }
     } catch (e: any) {
-        showToast('Error sinkronisasi: ' + e.message, 'error');
+        showToast('Kesalahan Jaringan: ' + (e.message || 'Cek koneksi internet.'), 'error');
+        console.error("Full Sync Exception:", e);
         return false;
     } finally {
         setIsSaving(false);

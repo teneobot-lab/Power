@@ -10,7 +10,7 @@ export const INITIAL_USERS: User[] = [
     id: '1',
     name: 'Admin Utama',
     username: 'admin',
-    password: 'admin22', // As requested
+    password: 'admin22',
     role: 'admin',
     status: 'active',
     lastLogin: new Date().toISOString()
@@ -18,7 +18,8 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  viteGasUrl: '/', 
+  vpsApiUrl: '/api', 
+  viteGasUrl: '', 
   youtubeApiKey: '',
   tiktokConfig: '',
   mediaItems: []

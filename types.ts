@@ -46,7 +46,7 @@ export interface User {
   id: string;
   name: string;
   username: string; 
-  password?: string; // Added password field
+  password?: string;
   role: UserRole;
   status: 'active' | 'inactive';
   lastLogin?: string;
@@ -62,7 +62,8 @@ export interface MediaItem {
 }
 
 export interface AppSettings {
-  viteGasUrl: string;
+  vpsApiUrl: string; // URL VPS / MySQL
+  viteGasUrl: string; // URL Google Sheets / GAS
   youtubeApiKey: string;
   tiktokConfig: string;
   mediaItems: MediaItem[];

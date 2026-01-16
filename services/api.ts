@@ -52,6 +52,8 @@ export const syncBackendData = async (
   type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 
   data: any
 ): Promise<{ success: boolean; message?: string }> => {
+  if (!baseUrl) return { success: false, message: 'URL tujuan tidak ditemukan.' };
+  
   try {
     const isGas = baseUrl.includes('script.google.com');
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
@@ -63,11 +65,15 @@ export const syncBackendData = async (
       headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
     });
 
-    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
+    if (!response.ok) {
+        if (response.status === 500) return { success: false, message: 'Server Error (500): Skrip GAS atau VPS mengalami kegagalan internal.' };
+        return { success: false, message: `Server error: ${response.status} ${response.statusText}` };
+    }
+    
     const json = await response.json();
     return { success: json.status === 'success', message: json.message };
   } catch (error: any) {
-    return { success: false, message: error.message || 'Network error' };
+    return { success: false, message: error.message || 'Network error (Cek URL atau koneksi).' };
   }
 };
 
@@ -80,19 +86,21 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
   dbStatus?: 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'; 
   latency?: number 
 }> => {
+  if (!baseUrl) return { online: false, message: 'URL tidak boleh kosong.' };
+
   try {
     const start = Date.now();
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     
     if (baseUrl.includes('script.google.com')) {
-        return { online: true, message: 'Google Apps Script detected', dbStatus: 'UNKNOWN', latency: Date.now() - start };
+        // GAS doesn't support CORS for simple HEAD/GET often, so we assume OK if URL is valid structure
+        return { online: true, message: 'Format URL Google Apps Script valid.', dbStatus: 'UNKNOWN', latency: Date.now() - start };
     }
     
-    // Gunakan endpoint data untuk cek status DB sekaligus
     const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/api/data`; 
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); 
+    const timeoutId = setTimeout(() => controller.abort(), 5000); 
 
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
@@ -100,26 +108,26 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     const latency = Date.now() - start;
 
     if (response.status === 502 || response.status === 504) {
-        return { online: false, message: 'Gateway Error: VPS Port 3000 mungkin tertutup.' };
+        return { online: false, message: 'Gateway Error: VPS Port mungkin tertutup.' };
     }
     
     if (response.status === 503) {
-        return { online: true, message: 'Server Aktif, tapi MySQL terputus.', dbStatus: 'DISCONNECTED', latency };
+        return { online: true, message: 'Server Aktif, Database MySQL Terputus.', dbStatus: 'DISCONNECTED', latency };
     }
 
     if (response.ok) {
         const contentType = response.headers.get("content-type");
         if (contentType && contentType.includes("application/json")) {
-             return { online: true, message: 'Semua sistem normal.', dbStatus: 'CONNECTED', latency };
+             return { online: true, message: 'Koneksi ke VPS & Database normal.', dbStatus: 'CONNECTED', latency };
         }
-        return { online: true, message: 'Server merespon, tapi bukan data valid (HTML).', dbStatus: 'UNKNOWN', latency };
+        return { online: true, message: 'Server merespon (Bukan JSON).', dbStatus: 'UNKNOWN', latency };
     } else {
-        return { online: false, message: `Server merespon error: ${response.status}` };
+        return { online: false, message: `Server error: ${response.status}` };
     }
   } catch (error: any) {
     return { 
       online: false, 
-      message: error.name === 'AbortError' ? 'Koneksi Timeout (Server lambat)' : 'Server tidak dapat dijangkau.' 
+      message: error.name === 'AbortError' ? 'Koneksi Timeout.' : 'Server tidak dapat dijangkau.' 
     };
   }
 };
