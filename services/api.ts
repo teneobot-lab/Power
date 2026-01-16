@@ -27,9 +27,13 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
       headers: { 'Accept': 'application/json' }
     });
 
+    if (response.status === 503) {
+        console.warn("⚠️ Database is down (503), but server is alive.");
+        return null;
+    }
+
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("text/html")) {
-        console.warn(`⚠️ Backend Issue at ${url}. Received HTML instead of JSON.`);
         return null;
     }
 
@@ -88,15 +92,15 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/api/data`; 
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); 
+    const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
     
     const latency = Date.now() - start;
 
-    if (response.status === 502) {
-        return { online: false, message: 'Bad Gateway: VPS Port 3000 tertutup / Server mati.' };
+    if (response.status === 502 || response.status === 504) {
+        return { online: false, message: 'Gateway Error: VPS Port 3000 mungkin tertutup.' };
     }
     
     if (response.status === 503) {
@@ -108,14 +112,14 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
         if (contentType && contentType.includes("application/json")) {
              return { online: true, message: 'Semua sistem normal.', dbStatus: 'CONNECTED', latency };
         }
-        return { online: true, message: 'Server merespon, tapi bukan JSON.', dbStatus: 'UNKNOWN', latency };
+        return { online: true, message: 'Server merespon, tapi bukan data valid (HTML).', dbStatus: 'UNKNOWN', latency };
     } else {
-        return { online: false, message: `HTTP Error: ${response.status}` };
+        return { online: false, message: `Server merespon error: ${response.status}` };
     }
   } catch (error: any) {
     return { 
       online: false, 
-      message: error.name === 'AbortError' ? 'Koneksi Timeout (Server lambat)' : 'Tidak dapat menjangkau server' 
+      message: error.name === 'AbortError' ? 'Koneksi Timeout (Server lambat)' : 'Server tidak dapat dijangkau.' 
     };
   }
 };

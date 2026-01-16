@@ -14,7 +14,7 @@ import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen, Database } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -30,6 +30,7 @@ const App: React.FC = () => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCloudConnected, setIsCloudConnected] = useState(false);
+  const [dbStatus, setDbStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'>('UNKNOWN');
   const [isSaving, setIsSaving] = useState(false);
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -69,22 +70,27 @@ const App: React.FC = () => {
 
   const loadData = useCallback(async (targetUrl?: string) => {
     setIsLoading(true);
-    const activeUrl = targetUrl || settings.viteGasUrl;
+    const savedSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
+    const activeUrl = targetUrl || savedSettings.viteGasUrl;
     
-    try {
-      const localSettings = loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
-      if (!targetUrl) {
-          setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
-          setTransactions(loadFromStorage('smartstock_transactions', []));
-          setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
-          setRejectLogs(loadFromStorage('smartstock_rejects', []));
-          setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
-          setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
-          setSettings(localSettings);
-      }
+    // Load local data first as fallback
+    if (!targetUrl) {
+        setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
+        setTransactions(loadFromStorage('smartstock_transactions', []));
+        setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
+        setRejectLogs(loadFromStorage('smartstock_rejects', []));
+        setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
+        setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
+        setSettings(savedSettings);
+        setTablePrefs(loadFromStorage('smartstock_table_prefs', DEFAULT_TABLE_PREFS));
+    }
 
-      if (activeUrl && activeUrl.length > 10) {
+    // Attempt Cloud Connection if URL exists
+    if (activeUrl && activeUrl.trim().length > 0) {
+      try {
         const conn = await checkServerConnection(activeUrl);
+        setDbStatus(conn.dbStatus || 'UNKNOWN');
+
         if (conn.online) {
           const cloudData = await fetchBackendData(activeUrl);
           if (cloudData) {
@@ -97,24 +103,26 @@ const App: React.FC = () => {
             if (!targetUrl) setSettings(prev => ({ ...prev, ...cloudData.settings }));
             
             setIsCloudConnected(true);
-            showToast('Sistem Terhubung ke Cloud/VPS', 'success');
+            if (conn.dbStatus === 'CONNECTED') {
+                showToast('Cloud & Database Terhubung', 'success');
+            } else {
+                showToast('Server Aktif, Database MySQL Terputus', 'warning');
+            }
           } else {
             setIsCloudConnected(false);
           }
         } else {
           setIsCloudConnected(false);
         }
-      } else {
+      } catch (error) {
+        console.error("Connection Error:", error);
         setIsCloudConnected(false);
       }
-    } catch (error) {
-      console.error(error);
+    } else {
       setIsCloudConnected(false);
-      showToast('Gagal memuat data cloud, beralih ke mode lokal', 'warning');
-    } finally {
-      setIsLoading(false);
     }
-  }, [settings.viteGasUrl, showToast]);
+    setIsLoading(false);
+  }, [showToast]);
 
   useEffect(() => { loadData(); }, []);
 
@@ -127,7 +135,7 @@ const App: React.FC = () => {
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.viteGasUrl) {
+    if (isMounted.current && isCloudConnected && settings.viteGasUrl && dbStatus === 'CONNECTED') {
       setIsSaving(true);
       await syncBackendData(settings.viteGasUrl, type as any, data);
       setIsSaving(false);
@@ -135,7 +143,7 @@ const App: React.FC = () => {
   };
 
   const handleFullSync = async () => {
-    if (!settings.viteGasUrl || settings.viteGasUrl.length < 10) {
+    if (!settings.viteGasUrl || settings.viteGasUrl.trim().length === 0) {
         showToast('URL Server/GAS belum dikonfigurasi', 'error');
         return false;
     }
@@ -264,12 +272,18 @@ const App: React.FC = () => {
                 <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm mt-1">Sistem Manajemen Gudang (VPS + Cloud Enabled)</p></div>
             </div>
             <div className="flex items-center gap-3">
-                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                    {isCloudConnected ? <Cloud className="w-3 h-3" /> : <CloudOff className="w-3 h-3" />}
+                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm shadow-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                    {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
                     {isCloudConnected ? 'Cloud Active' : 'Local Mode'}
                 </div>
+                {isCloudConnected && (
+                    <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${dbStatus === 'CONNECTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm animate-pulse'}`}>
+                        <Database className="w-3.5 h-3.5" />
+                        {dbStatus === 'CONNECTED' ? 'DB Connected' : 'DB Offline'}
+                    </div>
+                )}
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
-                <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full"><RefreshCw className="w-5 h-5" /></button>
+                <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full transition-transform active:rotate-180 duration-500"><RefreshCw className="w-5 h-5" /></button>
             </div>
         </header>
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
