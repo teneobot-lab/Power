@@ -185,7 +185,7 @@ const HEADERS = {
   RejectInventory: ['id', 'name', 'sku', 'baseUnit', 'unit2', 'ratio2', 'unit3', 'ratio3', 'lastUpdated'],
   Rejects: ['id', 'date', 'items', 'notes', 'timestamp'],
   Suppliers: ['id', 'name', 'contactPerson', 'email', 'phone', 'address'],
-  Users: ['id', 'name', 'email', 'role', 'status', 'lastLogin'],
+  Users: ['id', 'name', 'username', 'password', 'role', 'status', 'lastLogin'],
   Settings: ['key', 'value']
 };
 

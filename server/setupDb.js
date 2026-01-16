@@ -5,7 +5,6 @@ const mysql = require('mysql2/promise');
 async function setupDatabase() {
     console.log('🚀 Menyiapkan Database SmartStock...');
     
-    // Ganti konfigurasi ini sesuai dengan VPS Anda
     const config = {
         host: process.env.DB_HOST || '127.0.0.1',
         user: process.env.DB_USER || 'root',
@@ -18,8 +17,8 @@ async function setupDatabase() {
     const tables = [
         `CREATE TABLE IF NOT EXISTS inventory (
             id VARCHAR(50) PRIMARY KEY, 
-            name VARCHAR(255), 
             sku VARCHAR(100), 
+            name VARCHAR(255), 
             category VARCHAR(100), 
             quantity INT, 
             base_unit VARCHAR(50), 
@@ -44,8 +43,8 @@ async function setupDatabase() {
         )`,
         `CREATE TABLE IF NOT EXISTS reject_inventory (
             id VARCHAR(50) PRIMARY KEY, 
+            sku VARCHAR(100),
             name VARCHAR(255), 
-            sku VARCHAR(100), 
             base_unit VARCHAR(50), 
             unit2 VARCHAR(50), 
             ratio2 INT, 
@@ -71,7 +70,8 @@ async function setupDatabase() {
         `CREATE TABLE IF NOT EXISTS users (
             id VARCHAR(50) PRIMARY KEY, 
             name VARCHAR(255), 
-            email VARCHAR(255), 
+            username VARCHAR(255) UNIQUE, 
+            password VARCHAR(255),
             role VARCHAR(50), 
             status VARCHAR(50), 
             last_login DATETIME
@@ -84,7 +84,7 @@ async function setupDatabase() {
 
     try {
         const connection = await mysql.createConnection(config);
-        await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName}`);
+        await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbName} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
         await connection.query(`USE ${dbName}`);
 
         console.log('📂 Membuat tabel-tabel...');
@@ -92,6 +92,11 @@ async function setupDatabase() {
             await connection.query(sql);
         }
         
+        // Insert Admin Default (Username: admin, Password: admin22)
+        await connection.query(
+            "INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', 'admin22', 'admin', 'active', NOW())"
+        );
+
         console.log('✅ Database berhasil dikonfigurasi!');
         await connection.end();
         process.exit(0);

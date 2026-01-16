@@ -13,9 +13,8 @@ import RejectManager from './components/RejectManager';
 import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
-import LoginPage from './components/LoginPage';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -27,10 +26,6 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [tablePrefs, setTablePrefs] = useState<TablePreferences>(DEFAULT_TABLE_PREFS);
   
-  // Auth State
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [isAuthChecking, setIsAuthChecking] = useState(true);
-
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,6 +38,9 @@ const App: React.FC = () => {
   
   // Logo State
   const [isBlinking, setIsBlinking] = useState(false);
+
+  // Default User Role (Akses Penuh tanpa login)
+  const defaultRole = 'admin';
 
   // Blinking Logic
   useEffect(() => {
@@ -85,21 +83,8 @@ const App: React.FC = () => {
       setRejectItems(loadFromStorage('smartstock_reject_inventory', []));
       setRejectLogs(loadFromStorage('smartstock_rejects', []));
       setSuppliers(loadFromStorage('smartstock_suppliers', INITIAL_SUPPLIERS));
-      const localUsers = loadFromStorage('smartstock_users', INITIAL_USERS);
-      setUsers(localUsers);
+      setUsers(loadFromStorage('smartstock_users', INITIAL_USERS));
       setSettings(localSettings);
-
-      // Cek Session Login
-      const storedUserId = localStorage.getItem('smartstock_active_user');
-      if (storedUserId) {
-         const activeUser = localUsers.find((u: User) => u.id === storedUserId);
-         if (activeUser && activeUser.status === 'active') {
-             setCurrentUser(activeUser);
-         } else {
-             localStorage.removeItem('smartstock_active_user');
-         }
-      }
-      setIsAuthChecking(false);
 
       // Ambil data dari VPS jika ada URL
       if (localSettings.viteGasUrl) {
@@ -114,13 +99,6 @@ const App: React.FC = () => {
             setUsers(cloudData.users || []);
             setSettings(prev => ({ ...prev, ...cloudData.settings }));
             
-            // Re-validate session with cloud data
-            if (storedUserId) {
-                const cloudUser = cloudData.users.find((u: User) => u.id === storedUserId);
-                if (cloudUser && cloudUser.status === 'active') setCurrentUser(cloudUser);
-                else { setCurrentUser(null); localStorage.removeItem('smartstock_active_user'); }
-            }
-
             setIsCloudConnected(true);
             showToast('Cloud data sinkron', 'success');
           } else {
@@ -194,7 +172,6 @@ const App: React.FC = () => {
     return newItems;
   };
 
-  // --- USER MANAGEMENT HANDLERS ---
   const handleAddUser = (user: User) => {
     setUsers(prev => [...prev, user]);
     showToast(`User ${user.name} berhasil ditambahkan`, 'success');
@@ -203,55 +180,14 @@ const App: React.FC = () => {
   const handleUpdateUser = (updatedUser: User) => {
     setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     showToast(`Data user ${updatedUser.name} diperbarui`, 'success');
-    // Jika user yang diedit adalah user yang sedang login, update state currentUser
-    if (currentUser && currentUser.id === updatedUser.id) {
-        setCurrentUser(updatedUser);
-    }
   };
 
   const handleDeleteUser = (id: string) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus user ini?')) {
         setUsers(prev => prev.filter(u => u.id !== id));
         showToast('User telah dihapus', 'warning');
-        if (currentUser && currentUser.id === id) {
-            handleLogout();
-        }
     }
   };
-
-  // --- AUTH HANDLERS ---
-  const handleLogin = (user: User) => {
-      setCurrentUser(user);
-      localStorage.setItem('smartstock_active_user', user.id);
-      
-      // Update last login
-      const updatedUser = { ...user, lastLogin: new Date().toISOString() };
-      handleUpdateUser(updatedUser);
-      
-      showToast(`Selamat datang, ${user.name}`, 'success');
-  };
-
-  const handleLogout = () => {
-      setCurrentUser(null);
-      localStorage.removeItem('smartstock_active_user');
-      showToast('Logout berhasil', 'info');
-  };
-
-  // Render Login Page jika belum login
-  if (!currentUser && !isAuthChecking) {
-      return (
-        <LoginPage 
-            users={users} 
-            onLogin={handleLogin} 
-            isLoadingData={isLoading}
-        />
-      );
-  }
-
-  // Jika sedang checking auth (flash screen kecil agar tidak flicker)
-  if (isAuthChecking) {
-      return <div className="h-screen bg-slate-900 flex items-center justify-center"><div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div></div>;
-  }
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
@@ -264,13 +200,8 @@ const App: React.FC = () => {
         w-64`}
       >
         <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden">
-          {/* Mayan Aesthetic - Rotated Square (Diamond) */}
           <div className="absolute w-16 h-16 border border-emerald-500/20 rotate-45 transform bg-emerald-900/10 backdrop-blur-sm" />
-          
-          {/* Mayan Aesthetic - Rotating Dashed Ring */}
           <div className="absolute w-24 h-24 border-2 border-dashed border-emerald-500/10 rounded-full animate-[spin_12s_linear_infinite]" />
-
-          {/* Central Eye (Illuminati style) */}
           <div className="relative z-10 p-2">
             {isBlinking ? (
               <EyeOff className="w-12 h-12 text-emerald-500/80 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-100" />
@@ -278,8 +209,6 @@ const App: React.FC = () => {
               <Eye className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-100" strokeWidth={1.5} />
             )}
           </div>
-          
-          {/* Mobile close button */}
           <button className="md:hidden absolute right-4 top-4 p-1 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}>
             <X className="w-5 h-5" />
           </button>
@@ -294,19 +223,8 @@ const App: React.FC = () => {
           <button onClick={() => { setCurrentView(AppView.SUPPLIERS); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.SUPPLIERS ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Users className="w-5 h-5 shrink-0" /><span className="font-medium">Suppliers</span></button>
           <button onClick={() => { setCurrentView(AppView.AI_ASSISTANT); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.AI_ASSISTANT ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Bot className="w-5 h-5 shrink-0" /><span className="font-medium">AI Agent</span></button>
           
-          {currentUser?.role === 'admin' && (
-             <div className="pt-4 mt-4 border-t border-slate-800">
-                <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.ADMIN ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><ShieldCheck className="w-5 h-5 shrink-0" /><span className="font-medium">Admin Panel</span></button>
-             </div>
-          )}
-
-          <div className="mt-auto pt-4 border-t border-slate-800">
-             <div className="px-3 py-2 bg-slate-800/50 rounded-lg mb-2">
-                 <div className="text-xs text-slate-400 font-bold uppercase tracking-wider">Logged in as</div>
-                 <div className="text-sm font-bold text-white truncate">{currentUser?.name}</div>
-                 <div className="text-[10px] text-emerald-400">{currentUser?.role}</div>
-             </div>
-             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 transition-colors"><LogOut className="w-5 h-5 shrink-0" /><span className="font-medium">Logout</span></button>
+          <div className="pt-4 mt-4 border-t border-slate-800">
+            <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.ADMIN ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><ShieldCheck className="w-5 h-5 shrink-0" /><span className="font-medium">Admin Panel</span></button>
           </div>
         </nav>
       </aside>
@@ -315,10 +233,7 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 transition-all duration-300">
         <header className="flex justify-between items-center p-4 md:p-8 pb-4 shrink-0 bg-slate-50 z-20">
             <div className="flex items-center gap-4">
-                {/* Mobile menu trigger */}
                 <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu className="w-6 h-6" /></button>
-                
-                {/* Desktop Sidebar Toggle */}
                 <button 
                   onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
                   className="hidden md:flex p-2 text-slate-500 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-slate-200 rounded-lg transition-all"
@@ -326,7 +241,6 @@ const App: React.FC = () => {
                 >
                   {isSidebarCollapsed ? <PanelLeftOpen className="w-6 h-6" /> : <PanelLeftClose className="w-6 h-6" />}
                 </button>
-
                 <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm mt-1">Sistem Manajemen Gudang (VPS + Cloud Enabled)</p></div>
             </div>
             <div className="flex items-center gap-3">
@@ -343,13 +257,13 @@ const App: React.FC = () => {
             {currentView === AppView.INVENTORY && (
                 <InventoryTable 
                   items={items} onAddItem={addItem} onUpdateItem={updateItem} onDeleteItem={deleteItem} 
-                  userRole={currentUser?.role || 'viewer'} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
+                  userRole={defaultRole} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
                 />
             )}
             {currentView === AppView.TRANSACTIONS && (
                 <TransactionManager 
                   inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={() => {}} 
-                  userRole={currentUser?.role || 'viewer'} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)}
+                  userRole={defaultRole} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)}
                 />
             )}
             {currentView === AppView.REJECT && (
@@ -359,11 +273,11 @@ const App: React.FC = () => {
                     onUpdateRejectLog={(updatedLog) => setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l))}
                     onDeleteRejectLog={(id) => setRejectLogs(prev => prev.filter(l => l.id !== id))}
                     onUpdateRejectMaster={setRejectItems}
-                    userRole={currentUser?.role || 'viewer'} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} 
+                    userRole={defaultRole} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} 
                 />
             )}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
-            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser?.role || 'viewer'} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
+            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={defaultRole} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
             {currentView === AppView.ADMIN && (
                 <AdminPanel 

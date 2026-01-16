@@ -1,10 +1,9 @@
 
--- Buat Database jika belum ada
+-- 1. Buat Database
 CREATE DATABASE IF NOT EXISTS smartstock_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
 USE smartstock_db;
 
--- 1. Tabel Master Inventory (Data Barang Utama)
+-- 2. Tabel Master Inventory
 CREATE TABLE IF NOT EXISTS inventory (
     id VARCHAR(50) PRIMARY KEY,
     sku VARCHAR(100) NOT NULL,
@@ -12,7 +11,7 @@ CREATE TABLE IF NOT EXISTS inventory (
     category VARCHAR(100),
     quantity INT DEFAULT 0,
     base_unit VARCHAR(50) DEFAULT 'Pcs',
-    alternative_units LONGTEXT COMMENT 'Menyimpan JSON array unit konversi',
+    alternative_units LONGTEXT,
     min_level INT DEFAULT 0,
     unit_price DECIMAL(15, 2) DEFAULT 0,
     location VARCHAR(100),
@@ -20,22 +19,21 @@ CREATE TABLE IF NOT EXISTS inventory (
     status VARCHAR(20) DEFAULT 'active'
 );
 
--- 2. Tabel Transaksi (Riwayat Masuk/Keluar)
+-- 3. Tabel Transaksi (IN/OUT)
 CREATE TABLE IF NOT EXISTS transactions (
     id VARCHAR(50) PRIMARY KEY,
     date DATE NOT NULL,
-    type VARCHAR(20) NOT NULL COMMENT 'IN atau OUT',
-    items LONGTEXT NOT NULL COMMENT 'Menyimpan JSON detail item transaksi',
+    type VARCHAR(20) NOT NULL,
+    items LONGTEXT NOT NULL,
     notes TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     supplier_name VARCHAR(255),
-    po_number VARCHAR(100) COMMENT 'Nomor Purchase Order',
-    ri_number VARCHAR(100) COMMENT 'Nomor Surat Jalan/Resi',
-    photos LONGTEXT COMMENT 'Menyimpan JSON array base64 string foto'
+    po_number VARCHAR(100),
+    ri_number VARCHAR(100),
+    photos LONGTEXT
 );
 
--- 3. Tabel Master Reject (Data Barang Khusus Modul Reject)
--- Modul ini independen dari stok utama
+-- 4. Tabel Master Reject
 CREATE TABLE IF NOT EXISTS reject_inventory (
     id VARCHAR(50) PRIMARY KEY,
     sku VARCHAR(100),
@@ -48,16 +46,16 @@ CREATE TABLE IF NOT EXISTS reject_inventory (
     last_updated DATETIME
 );
 
--- 4. Tabel Log Reject (Riwayat Barang Reject)
+-- 5. Tabel Log Reject
 CREATE TABLE IF NOT EXISTS rejects (
     id VARCHAR(50) PRIMARY KEY,
     date DATE,
-    items LONGTEXT NOT NULL COMMENT 'Menyimpan JSON detail item reject & alasan',
+    items LONGTEXT NOT NULL,
     notes TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. Tabel Supplier
+-- 6. Tabel Supplier
 CREATE TABLE IF NOT EXISTS suppliers (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -67,22 +65,23 @@ CREATE TABLE IF NOT EXISTS suppliers (
     address TEXT
 );
 
--- 6. Tabel User (Pengguna Aplikasi)
+-- 7. Tabel User (Login)
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    username VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
     role VARCHAR(50) DEFAULT 'staff',
     status VARCHAR(50) DEFAULT 'active',
     last_login DATETIME
 );
 
--- 7. Tabel Settings (Konfigurasi Aplikasi)
+-- 8. Tabel Settings
 CREATE TABLE IF NOT EXISTS settings (
     setting_key VARCHAR(100) PRIMARY KEY,
     setting_value LONGTEXT
 );
 
--- Insert Default Admin User jika tabel kosong
-INSERT IGNORE INTO users (id, name, email, role, status, last_login) 
-VALUES ('1', 'Admin', 'admin@smartstock.com', 'admin', 'active', NOW());
+-- 9. Insert Admin Default (admin / admin22)
+INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) 
+VALUES ('1', 'Admin Utama', 'admin', 'admin22', 'admin', 'active', NOW());
