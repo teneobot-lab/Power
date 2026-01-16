@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, AppSettings } from '../types';
-import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Settings, X, Wifi, Save, CheckCircle2, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Settings, X, Wifi, Save, CheckCircle2, Loader2, Key } from 'lucide-react';
 import { verifyPassword } from '../utils/security';
 import { checkServerConnection } from '../services/api';
 
@@ -25,6 +25,14 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
   const [tempVpsUrl, setTempVpsUrl] = useState(settings?.vpsApiUrl || '/');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
   const [connectionMsg, setConnectionMsg] = useState('');
+  const [cryptoWarning, setCryptoWarning] = useState(false);
+
+  useEffect(() => {
+    // Check for Secure Context (HTTPS or Localhost) because Web Crypto API requires it
+    if (typeof crypto !== 'undefined' && typeof crypto.subtle === 'undefined' && window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        setCryptoWarning(true);
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,15 +52,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             } 
             
             // Verifikasi Hash Password
-            const isValid = await verifyPassword(password, foundUser.password || '');
-            
-            if (isValid) {
-                onLogin(foundUser);
-            } else {
-                 throw new Error('Password yang Anda masukkan salah.');
+            try {
+                const isValid = await verifyPassword(password, foundUser.password || '');
+                if (isValid) {
+                    onLogin(foundUser);
+                } else {
+                    throw new Error('Password yang Anda masukkan salah.');
+                }
+            } catch (hashError: any) {
+                console.error("Hash error:", hashError);
+                if (hashError.message && hashError.message.includes("subtle")) {
+                    throw new Error("Browser Anda memblokir fitur login di koneksi HTTP (Tidak Aman). Gunakan HTTPS atau Localhost.");
+                }
+                throw hashError;
             }
         } else {
-             throw new Error('Username tidak ditemukan. Cek koneksi server jika Anda baru saja setup database.');
+             if (users.length === 0) {
+                 throw new Error('Database user kosong/belum termuat. Coba refresh atau cek koneksi server.');
+             }
+             throw new Error('Username tidak ditemukan.');
         }
     } catch (err: any) {
         setError(err.message);
@@ -108,6 +126,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Power Inventory</h1>
             <p className="text-slate-400 text-sm">Masuk menggunakan Akun Anda</p>
         </div>
+
+        {cryptoWarning && (
+            <div className="mb-6 bg-amber-500/20 border border-amber-500/30 p-4 rounded-xl flex gap-3 animate-pulse">
+                <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                <p className="text-xs text-amber-200">
+                    <strong>Peringatan Keamanan:</strong> Anda mengakses via HTTP (Tidak Aman). Login mungkin gagal karena browser memblokir fitur enkripsi password. Harap gunakan <strong>HTTPS</strong> atau akses via <strong>localhost</strong>.
+                </p>
+            </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-5">
             <div>
@@ -166,11 +193,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
             </button>
         </form>
 
-        <div className="mt-6 pt-4 border-t border-white/5 flex justify-center">
+        <div className="mt-6 pt-4 border-t border-white/5 text-center">
+             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[10px] text-slate-400 mb-4">
+                <Key className="w-3 h-3" />
+                Default: <strong>admin</strong> / <strong>admin22</strong>
+             </div>
+             
              <button 
                 type="button"
                 onClick={handleFactoryReset}
-                className="flex items-center gap-2 text-[10px] font-bold text-slate-600 hover:text-rose-400 transition-colors"
+                className="flex items-center gap-2 text-[10px] font-bold text-slate-600 hover:text-rose-400 transition-colors mx-auto"
              >
                 <RotateCcw className="w-3 h-3" />
                 Reset Data Lokal
@@ -232,5 +264,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
     </div>
   );
 };
+
+// Helper for AlertTriangle icon which was missing in original imports
+const AlertTriangle = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+);
 
 export default LoginPage;

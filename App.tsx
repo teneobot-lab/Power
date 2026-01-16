@@ -99,7 +99,15 @@ const App: React.FC = () => {
             setRejectItems(cloudData.reject_inventory || []);
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
-            setUsers(cloudData.users || []); // Ensure this loads user with hashes
+            
+            // Critical Fix: Jika database kosong (fresh install), gunakan INITIAL_USERS agar admin tetap bisa login
+            const remoteUsers = cloudData.users || [];
+            if (remoteUsers.length > 0) {
+                setUsers(remoteUsers);
+            } else {
+                console.warn("Database users kosong. Menggunakan default admin lokal.");
+                setUsers(INITIAL_USERS);
+            }
             
             setIsCloudConnected(true);
             if (conn.dbStatus === 'CONNECTED') showToast('Koneksi VPS & MySQL Aktif', 'success');
