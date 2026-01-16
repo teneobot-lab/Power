@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User } from '../types';
-import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck, RotateCcw, Wrench } from 'lucide-react';
 import { verifyPassword } from '../utils/security';
 
 interface LoginPageProps {
@@ -36,7 +36,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             
             // Verifikasi Hash Password
             // Note: Jika password di database masih plain text (legacy), validasi ini mungkin gagal.
-            // Namun untuk sistem baru kita asumsikan sudah hash.
             const isValid = await verifyPassword(password, foundUser.password || '');
             
             if (isValid) {
@@ -52,6 +51,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
         setError(err.message);
     } finally {
         setIsAnimating(false);
+    }
+  };
+
+  const handleFactoryReset = () => {
+    if (confirm("PERHATIAN: Ini akan menghapus semua data CACHE di browser (Local Storage) dan mereset ke pengaturan awal.\n\nLakukan ini jika Anda tidak bisa login karena perubahan sistem password.\n\nData di Database VPS (MySQL) AMAN dan tidak akan terhapus.\n\nLanjutkan?")) {
+        localStorage.clear();
+        window.location.reload();
     }
   };
 
@@ -129,9 +135,23 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-white/5 text-center">
-            <p className="text-slate-500 text-xs">
-                SmartStock System v2.0 &copy; 2024
+        <div className="mt-6 pt-4 border-t border-white/5">
+             <button 
+                type="button"
+                onClick={handleFactoryReset}
+                className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold text-slate-500 hover:text-rose-400 transition-colors"
+             >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Data & Perbaiki Login
+             </button>
+             <p className="text-center text-[10px] text-slate-600 mt-2">
+                Gunakan tombol di atas jika Anda tidak bisa login setelah update.
+             </p>
+        </div>
+
+        <div className="mt-4 text-center">
+            <p className="text-slate-600 text-xs">
+                SmartStock System v2.0
             </p>
         </div>
       </div>
