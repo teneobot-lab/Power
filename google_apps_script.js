@@ -1,6 +1,7 @@
 
 /**
  * SMARTSTOCK BACKEND - HYBRID (MySQL Primary + Sheets Sync)
+ * Versi: 1.5 (Flattened Rows for Transactions & Rejects)
  */
 
 const DB_URL = 'jdbc:mysql://YOUR_DB_HOST:3306/smartstock_db'; 
@@ -52,14 +53,14 @@ function doPost(e) {
     if (type === 'full_sync') {
       const ss = getSpreadsheet();
       if (data.inventory) saveSheetData(ss, 'Inventory', data.inventory);
-      if (data.transactions) saveSheetData(ss, 'Transactions', data.transactions);
+      if (data.transactions) saveFlattenedTransactions(ss, data.transactions);
       if (data.rejectItems) saveSheetData(ss, 'RejectInventory', data.rejectItems);
-      if (data.rejectLogs) saveSheetData(ss, 'Rejects', data.rejectLogs);
+      if (data.rejectLogs) saveFlattenedRejects(ss, data.rejectLogs);
       if (data.suppliers) saveSheetData(ss, 'Suppliers', data.suppliers);
       if (data.users) saveSheetData(ss, 'Users', data.users);
       if (data.settings) saveSheetSettings(ss, data.settings);
       
-      return responseJSON({ status: 'success', message: 'Full Spreadsheet Sync Complete' });
+      return responseJSON({ status: 'success', message: 'Full Spreadsheet Sync Complete (Item-by-item rows)' });
     }
 
     // Individual SQL Sync
@@ -76,16 +77,16 @@ function doPost(e) {
       conn.close();
     }
 
-    // Background Sync to Sheet
+    // Background Sync to Sheet (Real-time sync also flattens)
     try {
       const ss = getSpreadsheet();
       if (type === 'settings') saveSheetSettings(ss, data);
+      else if (type === 'transactions') saveFlattenedTransactions(ss, data);
+      else if (type === 'rejects') saveFlattenedRejects(ss, data);
       else {
         const typeToSheet = { 
           'inventory': 'Inventory', 
-          'transactions': 'Transactions', 
           'reject_inventory': 'RejectInventory', 
-          'rejects': 'Rejects', 
           'suppliers': 'Suppliers', 
           'users': 'Users' 
         };
@@ -143,6 +144,10 @@ function fetchSettingsFromSql(conn) {
 
 function saveToSql(conn, type, dataArray) {
   const stmtDelete = conn.createStatement();
+  // Validasi tipe table untuk mencegah SQL injection
+  const allowed = ['inventory', 'transactions', 'reject_inventory', 'rejects', 'suppliers', 'users'];
+  if(!allowed.includes(type)) return;
+  
   stmtDelete.execute('DELETE FROM ' + type);
   stmtDelete.close();
   if (!dataArray || dataArray.length === 0) return;
@@ -180,10 +185,10 @@ function snakeToCamel(str) { return str.replace(/_([a-z])/g, (g) => g[1].toUpper
 
 // --- SHEETS FUNCTIONS ---
 const HEADERS = {
-  Inventory: ['id', 'name', 'sku', 'category', 'quantity', 'baseUnit', 'alternativeUnits', 'minLevel', 'unitPrice', 'location', 'lastUpdated'],
-  Transactions: ['id', 'date', 'type', 'items', 'notes', 'timestamp', 'supplierName', 'poNumber', 'riNumber', 'photos'],
+  Inventory: ['id', 'name', 'sku', 'category', 'quantity', 'baseUnit', 'minLevel', 'unitPrice', 'location', 'lastUpdated'],
+  Transactions: ['tx_id', 'date', 'type', 'item_name', 'qty', 'unit', 'total_base_qty', 'notes', 'supplier', 'po_no', 'ri_no'],
   RejectInventory: ['id', 'name', 'sku', 'baseUnit', 'unit2', 'ratio2', 'unit3', 'ratio3', 'lastUpdated'],
-  Rejects: ['id', 'date', 'items', 'notes', 'timestamp'],
+  Rejects: ['reject_id', 'date', 'item_name', 'sku', 'qty', 'unit', 'total_base_qty', 'reason', 'notes'],
   Suppliers: ['id', 'name', 'contactPerson', 'email', 'phone', 'address'],
   Users: ['id', 'name', 'username', 'password', 'role', 'status', 'lastLogin'],
   Settings: ['key', 'value']
@@ -219,6 +224,68 @@ function saveSheetData(ss, sheetName, dataArray) {
     return val === undefined || val === null ? "" : val;
   }));
   if (rows.length > 0) sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+}
+
+/**
+ * Menyimpan transaksi per baris item (Flattened)
+ */
+function saveFlattenedTransactions(ss, transactions) {
+  let sheet = ss.getSheetByName('Transactions');
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow()-1, sheet.getLastColumn()).clearContent();
+  if (!transactions || transactions.length === 0) return;
+
+  const flattenedRows = [];
+  transactions.forEach(tx => {
+    tx.items.forEach(item => {
+      flattenedRows.push([
+        tx.id,
+        tx.date,
+        tx.type,
+        item.itemName,
+        item.quantityInput,
+        item.selectedUnit,
+        item.totalBaseQuantity,
+        tx.notes || "",
+        tx.supplierName || "",
+        tx.poNumber || "",
+        tx.riNumber || ""
+      ]);
+    });
+  });
+
+  if (flattenedRows.length > 0) {
+    sheet.getRange(2, 1, flattenedRows.length, HEADERS.Transactions.length).setValues(flattenedRows);
+  }
+}
+
+/**
+ * Menyimpan reject log per baris item (Flattened)
+ */
+function saveFlattenedRejects(ss, rejects) {
+  let sheet = ss.getSheetByName('Rejects');
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow()-1, sheet.getLastColumn()).clearContent();
+  if (!rejects || rejects.length === 0) return;
+
+  const flattenedRows = [];
+  rejects.forEach(log => {
+    log.items.forEach(item => {
+      flattenedRows.push([
+        log.id,
+        log.date,
+        item.itemName,
+        item.sku,
+        item.quantity,
+        item.unit,
+        item.totalBaseQuantity,
+        item.reason,
+        log.notes || ""
+      ]);
+    });
+  });
+
+  if (flattenedRows.length > 0) {
+    sheet.getRange(2, 1, flattenedRows.length, HEADERS.Rejects.length).setValues(flattenedRows);
+  }
 }
 
 function saveSheetSettings(ss, settingsObj) {

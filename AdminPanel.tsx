@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, AppSettings, UserRole, MediaItem } from './types';
 import { generateId } from './utils/storageUtils';
 import { checkServerConnection } from './services/api';
-import { Save, Shield, Plus, Edit2, Trash2, X, Settings, MonitorPlay, Globe, Loader2, Wifi, Youtube, Video, Link, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Save, Shield, Plus, Edit2, Trash2, X, Settings, MonitorPlay, Globe, Loader2, Wifi, Youtube, Video, Link, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -17,11 +17,12 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
   settings, onUpdateSettings, 
-  users, onAddUser, onUpdateUser, onDeleteUser
+  users, onAddUser, onUpdateUser, onDeleteUser, onFullSyncToSheets
 }) => {
-  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'media'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'media' | 'cloud'>('settings');
   const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userFormData, setUserFormData] = useState<Partial<User>>({});
@@ -51,6 +52,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       const result = await checkServerConnection(tempSettings.viteGasUrl);
       setConnectionStatus(result.online ? 'success' : 'failed');
       setConnectionMsg(result.message);
+  };
+
+  const handleManualSync = async () => {
+      if (!onFullSyncToSheets) return;
+      setIsSyncing(true);
+      await onFullSyncToSheets();
+      setIsSyncing(false);
   };
 
   const extractVideoId = (url: string, type: 'youtube' | 'tiktok') => {
@@ -136,6 +144,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             <Shield className="w-4 h-4" /> 
             <span>Manajemen Akses</span>
           </button>
+          <button onClick={() => setActiveTab('cloud')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'cloud' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
+            <FileSpreadsheet className="w-4 h-4" /> 
+            <span>Integrasi Sheets</span>
+          </button>
           <button onClick={() => setActiveTab('media')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'media' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
             <MonitorPlay className="w-4 h-4" /> 
             <span>Media Center</span>
@@ -153,18 +165,90 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  </h2>
                  <div className="space-y-8">
                     <div>
-                      <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend / VPS URL</label>
+                      <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend / VPS / GAS URL</label>
                       <div className="flex flex-col sm:flex-row gap-3">
-                          <input type="url" className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" placeholder="http://ip-vps:3000" value={tempSettings.viteGasUrl} onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} />
-                          <button onClick={handleTestConnection} className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800">Tes Koneksi</button>
+                          <input type="url" className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" placeholder="http://ip-vps:3000 atau URL GAS" value={tempSettings.viteGasUrl} onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} />
+                          <button onClick={handleTestConnection} className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-2">
+                             {connectionStatus === 'checking' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                             Tes Koneksi
+                          </button>
                       </div>
+                      {connectionMsg && (
+                        <div className={`mt-3 p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+                            {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                            {connectionMsg}
+                        </div>
+                      )}
                     </div>
                     <div className="pt-6 border-t flex items-center gap-4">
-                       <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg">Simpan & Aktifkan Cloud</button>
-                       {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
+                       <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95">
+                          <Save className="w-4 h-4" /> Simpan Konfigurasi
+                       </button>
+                       {isSaved && <span className="text-emerald-600 text-sm font-bold animate-in fade-in slide-in-from-left-2"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
                     </div>
                  </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'cloud' && (
+            <div className="space-y-6">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+                    <div className="flex items-center justify-between mb-8">
+                        <div>
+                            <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-3">
+                                <FileSpreadsheet className="w-7 h-7 text-emerald-600" /> 
+                                Sinkronisasi Google Sheets
+                            </h2>
+                            <p className="text-slate-500 text-sm mt-1">Pastikan URL GAS sudah benar untuk membackup seluruh transaksi ke Spreadsheet.</p>
+                        </div>
+                        <div className={`px-4 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 ${tempSettings.viteGasUrl?.includes('script.google.com') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-400 border-slate-200'}`}>
+                            {tempSettings.viteGasUrl?.includes('script.google.com') ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                            {tempSettings.viteGasUrl?.includes('script.google.com') ? 'Endpoint GAS Aktif' : 'GAS Belum Terdeteksi'}
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-2xl p-6 border border-slate-200 space-y-6">
+                        <div className="flex items-start gap-4">
+                            <div className="p-3 bg-white rounded-xl shadow-sm border border-slate-100">
+                                <RefreshCw className={`w-6 h-6 text-blue-500 ${isSyncing ? 'animate-spin' : ''}`} />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-slate-800">Sinkronisasi Total</h4>
+                                <p className="text-xs text-slate-500 mt-1">Gunakan fitur ini untuk mengirim ulang seluruh data Inventory, Transaksi, dan Supplier ke Spreadsheet jika data di cloud tertinggal atau ingin melakukan backup manual.</p>
+                                
+                                <div className="mt-6 flex items-center gap-4">
+                                    <button 
+                                        onClick={handleManualSync}
+                                        disabled={isSyncing || !tempSettings.viteGasUrl}
+                                        className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-200 flex items-center gap-2 transition-all active:scale-95"
+                                    >
+                                        {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                        Sync Sekarang
+                                    </button>
+                                    
+                                    {tempSettings.lastSheetSync && (
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter bg-white px-3 py-1.5 rounded-lg border border-slate-100 shadow-sm">
+                                            <Clock className="w-3 h-3" />
+                                            Sync Terakhir: {new Date(tempSettings.lastSheetSync).toLocaleString('id-ID')}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-100">
+                            <h5 className="text-xs font-black text-emerald-800 uppercase mb-2">Sinkronisasi Otomatis</h5>
+                            <p className="text-[11px] text-emerald-600 leading-relaxed">Aplikasi melakukan sinkronisasi otomatis setiap kali ada perubahan data (real-time sync). Fitur manual di atas hanya diperlukan jika koneksi sempat terputus.</p>
+                        </div>
+                        <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100">
+                            <h5 className="text-xs font-black text-blue-800 uppercase mb-2">Struktur Spreadsheet</h5>
+                            <p className="text-[11px] text-blue-600 leading-relaxed">Seluruh data transaksi akan masuk ke sheet "Transactions", inventory ke "Inventory", dsb. Pastikan tidak mengubah nama sheet manual.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
           )}
 
@@ -242,7 +326,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              <div className="flex flex-col items-center gap-2"><Video className="w-8 h-8 text-slate-400" /><span className="text-[10px] font-bold text-slate-400 uppercase">TikTok Preview</span></div>
                            )}
                            <div className="absolute top-2 left-2 px-2 py-0.5 bg-black/60 rounded-lg flex items-center gap-1.5">
-                             {/* Fix: Wrap conditional JSX expression in curly braces to prevent syntax errors */}
                              {item.type === 'youtube' ? <Youtube className="w-3 h-3 text-rose-500" /> : <Video className="w-3 h-3 text-white" />} 
                              <span className="text-[9px] font-bold text-white uppercase">{item.type}</span>
                            </div>

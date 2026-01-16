@@ -83,7 +83,7 @@ const App: React.FC = () => {
           setSettings(localSettings);
       }
 
-      if (activeUrl && activeUrl.length > 0) {
+      if (activeUrl && activeUrl.length > 10) {
         const conn = await checkServerConnection(activeUrl);
         if (conn.online) {
           const cloudData = await fetchBackendData(activeUrl);
@@ -131,6 +131,41 @@ const App: React.FC = () => {
       setIsSaving(true);
       await syncBackendData(settings.viteGasUrl, type as any, data);
       setIsSaving(false);
+    }
+  };
+
+  const handleFullSync = async () => {
+    if (!settings.viteGasUrl || settings.viteGasUrl.length < 10) {
+        showToast('URL Server/GAS belum dikonfigurasi', 'error');
+        return false;
+    }
+    
+    setIsSaving(true);
+    try {
+        const fullData = {
+            inventory: items,
+            transactions: transactions,
+            rejectItems: rejectItems,
+            rejectLogs: rejectLogs,
+            suppliers: suppliers,
+            users: users,
+            settings: settings
+        };
+        
+        const result = await syncBackendData(settings.viteGasUrl, 'full_sync' as any, fullData);
+        if (result.success) {
+            showToast('Seluruh data berhasil disinkronkan ke Spreadsheet', 'success');
+            setSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
+            return true;
+        } else {
+            showToast('Gagal sinkronisasi: ' + result.message, 'error');
+            return false;
+        }
+    } catch (e: any) {
+        showToast('Error sinkronisasi: ' + e.message, 'error');
+        return false;
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -281,6 +316,7 @@ const App: React.FC = () => {
                     onAddUser={() => {}} 
                     onUpdateUser={() => {}} 
                     onDeleteUser={() => {}} 
+                    onFullSyncToSheets={handleFullSync}
                 />
             )}
         </div>
