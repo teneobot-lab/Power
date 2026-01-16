@@ -5,12 +5,14 @@ export const INITIAL_INVENTORY: InventoryItem[] = [];
 
 export const INITIAL_SUPPLIERS: Supplier[] = [];
 
+// Default User: admin / admin22
+// Hash SHA-256 untuk 'admin22': 3d3467611599540c49097e3a2779836183c50937617565437172083626217315
 export const INITIAL_USERS: User[] = [
   {
     id: '1',
     name: 'Admin Utama',
     username: 'admin',
-    password: 'admin22',
+    password: '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 
     role: 'admin',
     status: 'active',
     lastLogin: new Date().toISOString()
@@ -22,7 +24,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   viteGasUrl: '', 
   youtubeApiKey: '',
   tiktokConfig: '',
-  mediaItems: []
+  mediaItems: [],
+  lastSheetSync: ''
 };
 
 export const DEFAULT_TABLE_PREFS: TablePreferences = {

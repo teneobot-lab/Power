@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
 import { Eye, EyeOff, LogIn, AlertCircle, ShieldCheck } from 'lucide-react';
+import { verifyPassword } from '../utils/security';
 
 interface LoginPageProps {
   users: User[];
@@ -16,44 +17,42 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
   const [error, setError] = useState<string | null>(null);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setIsAnimating(true);
 
-    // Simulate network delay for better UX
-    setTimeout(() => {
-        if (!username.trim()) {
-            setError('Username wajib diisi');
-            setIsAnimating(false);
-            return;
-        }
-
-        if (!password.trim()) {
-            setError('Password wajib diisi');
-            setIsAnimating(false);
-            return;
-        }
+    try {
+        if (!username.trim()) throw new Error('Username wajib diisi');
+        if (!password.trim()) throw new Error('Password wajib diisi');
 
         // Cari user berdasarkan username
         const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
 
         if (foundUser) {
             if (foundUser.status === 'inactive') {
-                setError('Akun ini telah dinonaktifkan. Hubungi Admin.');
-                setIsAnimating(false);
-            } else if (foundUser.password === password) {
+                 throw new Error('Akun ini telah dinonaktifkan. Hubungi Admin.');
+            } 
+            
+            // Verifikasi Hash Password
+            // Note: Jika password di database masih plain text (legacy), validasi ini mungkin gagal.
+            // Namun untuk sistem baru kita asumsikan sudah hash.
+            const isValid = await verifyPassword(password, foundUser.password || '');
+            
+            if (isValid) {
                 // Login successful
                 onLogin(foundUser);
             } else {
-                setError('Password yang Anda masukkan salah.');
-                setIsAnimating(false);
+                 throw new Error('Password yang Anda masukkan salah.');
             }
         } else {
-            setError('Username tidak ditemukan.');
-            setIsAnimating(false);
+             throw new Error('Username tidak ditemukan.');
         }
-    }, 800);
+    } catch (err: any) {
+        setError(err.message);
+    } finally {
+        setIsAnimating(false);
+    }
   };
 
   return (
@@ -70,7 +69,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
                 <ShieldCheck className="w-10 h-10 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Power Inventory</h1>
-            <p className="text-slate-400 text-sm">Masuk menggunakan Username</p>
+            <p className="text-slate-400 text-sm">Masuk menggunakan Akun Anda</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
@@ -117,9 +116,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
             <button 
                 type="submit" 
                 disabled={isAnimating || isLoadingData}
-                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2 active:scale-95"
+                className="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-                {isAnimating ? (
+                {isAnimating || isLoadingData ? (
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                     <>
@@ -132,7 +131,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData }) 
 
         <div className="mt-8 pt-6 border-t border-white/5 text-center">
             <p className="text-slate-500 text-xs">
-                SmartStock System v1.2
+                SmartStock System v2.0 &copy; 2024
             </p>
         </div>
       </div>

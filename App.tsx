@@ -13,8 +13,9 @@ import RejectManager from './components/RejectManager';
 import ItemHistory from './components/ItemHistory';
 import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
+import LoginPage from './components/LoginPage';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen, Database } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, X, PanelLeftClose, PanelLeftOpen, Database, LogOut } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -26,6 +27,9 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [tablePrefs, setTablePrefs] = useState<TablePreferences>(DEFAULT_TABLE_PREFS);
   
+  // Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -36,8 +40,6 @@ const App: React.FC = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
-
-  const defaultRole = 'admin';
 
   useEffect(() => {
     const triggerBlink = () => {
@@ -97,7 +99,7 @@ const App: React.FC = () => {
             setRejectItems(cloudData.reject_inventory || []);
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
-            setUsers(cloudData.users || []);
+            setUsers(cloudData.users || []); // Ensure this loads user with hashes
             
             setIsCloudConnected(true);
             if (conn.dbStatus === 'CONNECTED') showToast('Koneksi VPS & MySQL Aktif', 'success');
@@ -117,6 +119,28 @@ const App: React.FC = () => {
   }, [showToast]);
 
   useEffect(() => { loadData(); }, []);
+
+  // Restore Session if available (Basic persist)
+  useEffect(() => {
+    const savedSession = sessionStorage.getItem('smartstock_session_user');
+    if (savedSession) {
+        try {
+            setCurrentUser(JSON.parse(savedSession));
+        } catch (e) {}
+    }
+  }, []);
+
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    sessionStorage.setItem('smartstock_session_user', JSON.stringify(user));
+    showToast(`Selamat datang, ${user.name}`, 'success');
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    sessionStorage.removeItem('smartstock_session_user');
+    showToast('Berhasil keluar', 'info');
+  };
 
   const handleUpdateSettings = (newSettings: AppSettings) => {
       setSettings(newSettings);
@@ -163,12 +187,10 @@ const App: React.FC = () => {
         } else {
             const errorMsg = result.message || 'Error tidak diketahui pada server GAS.';
             showToast('Gagal Sync ke Spreadsheet: ' + errorMsg, 'error');
-            console.error("GAS Sync Result Error:", result);
             return false;
         }
     } catch (e: any) {
         showToast('Kesalahan Jaringan: ' + (e.message || 'Cek koneksi internet.'), 'error');
-        console.error("Full Sync Exception:", e);
         return false;
     } finally {
         setIsSaving(false);
@@ -229,6 +251,16 @@ const App: React.FC = () => {
     return newItems;
   };
 
+  // --- RENDER LOGIN PAGE IF NO USER ---
+  if (!currentUser) {
+      return (
+          <>
+            <ToastContainer toasts={toasts} onRemove={removeToast} />
+            <LoginPage users={users} onLogin={handleLogin} isLoadingData={isLoading && users.length === 0} />
+          </>
+      );
+  }
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden font-sans">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
@@ -238,7 +270,7 @@ const App: React.FC = () => {
         ${isSidebarCollapsed ? 'md:w-0 md:opacity-0 md:overflow-hidden' : 'md:w-64 md:opacity-100'}
         w-64`}
       >
-        <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden">
+        <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden flex-shrink-0">
           <div className="absolute w-16 h-16 border border-emerald-500/20 rotate-45 transform bg-emerald-900/10 backdrop-blur-sm" />
           <div className="absolute w-24 h-24 border-2 border-dashed border-emerald-500/10 rounded-full animate-[spin_12s_linear_infinite]" />
           <div className="relative z-10 p-2">
@@ -247,7 +279,7 @@ const App: React.FC = () => {
           <button className="md:hidden absolute right-4 top-4 p-1 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X className="w-5 h-5" /></button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden flex flex-col">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar">
           <button onClick={() => { setCurrentView(AppView.DASHBOARD); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.DASHBOARD ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5 shrink-0" /><span className="font-medium">Dashboard</span></button>
           <button onClick={() => { setCurrentView(AppView.INVENTORY); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.INVENTORY ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Package className="w-5 h-5 shrink-0" /><span className="font-medium">Inventory</span></button>
           <button onClick={() => { setCurrentView(AppView.TRANSACTIONS); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.TRANSACTIONS ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><ArrowRightLeft className="w-5 h-5 shrink-0" /><span className="font-medium">Transaksi</span></button>
@@ -257,9 +289,24 @@ const App: React.FC = () => {
           <button onClick={() => { setCurrentView(AppView.AI_ASSISTANT); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.AI_ASSISTANT ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Bot className="w-5 h-5 shrink-0" /><span className="font-medium">AI Agent</span></button>
           
           <div className="pt-4 mt-4 border-t border-slate-800">
-            <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.ADMIN ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><ShieldCheck className="w-5 h-5 shrink-0" /><span className="font-medium">Admin Panel</span></button>
+            {currentUser.role === 'admin' && (
+                <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.ADMIN ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><ShieldCheck className="w-5 h-5 shrink-0" /><span className="font-medium">Admin Panel</span></button>
+            )}
+            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap hover:bg-rose-900/30 text-rose-400 mt-2"><LogOut className="w-5 h-5 shrink-0" /><span className="font-medium">Keluar</span></button>
           </div>
         </nav>
+        
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-500 flex items-center justify-center font-bold text-white text-xs">
+                    {currentUser.name.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
+                    <p className="text-[10px] text-slate-500 truncate capitalize">{currentUser.role}</p>
+                </div>
+            </div>
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 transition-all duration-300">
@@ -289,7 +336,7 @@ const App: React.FC = () => {
             {currentView === AppView.INVENTORY && (
                 <InventoryTable 
                   items={items} onAddItem={addItem} onBatchAdd={addBatchItems} onUpdateItem={updateItem} onDeleteItem={deleteItem} 
-                  userRole={defaultRole} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
+                  userRole={currentUser.role} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
                 />
             )}
             {currentView === AppView.TRANSACTIONS && (
@@ -299,7 +346,7 @@ const App: React.FC = () => {
                 onProcessTransaction={processTransaction} 
                 onUpdateTransaction={updateTransaction} 
                 onDeleteTransaction={deleteTransaction}
-                userRole={defaultRole} 
+                userRole={currentUser.role} 
                 columns={tablePrefs.transactions} 
                 onToggleColumn={(id) => toggleColumn('transactions', id)} 
               />
@@ -312,22 +359,22 @@ const App: React.FC = () => {
                 onUpdateRejectLog={(updatedLog) => { setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l)); showToast('Log Reject diperbarui', 'success'); }} 
                 onDeleteRejectLog={(id) => { setRejectLogs(prev => prev.filter(l => l.id !== id)); showToast('Log Reject dihapus', 'warning'); }} 
                 onUpdateRejectMaster={(newList) => { setRejectItems(newList); showToast('Master Reject diperbarui', 'info'); }} 
-                userRole={defaultRole} 
+                userRole={currentUser.role} 
                 columns={tablePrefs.rejects} 
                 onToggleColumn={(id) => toggleColumn('rejects', id)} 
               />
             )}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
-            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={defaultRole} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
+            {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser.role} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
-            {currentView === AppView.ADMIN && (
+            {currentView === AppView.ADMIN && currentUser.role === 'admin' && (
                 <AdminPanel 
                     settings={settings} 
                     onUpdateSettings={handleUpdateSettings} 
                     users={users} 
-                    onAddUser={() => {}} 
-                    onUpdateUser={() => {}} 
-                    onDeleteUser={() => {}} 
+                    onAddUser={(u) => setUsers(prev => [...prev, u])} 
+                    onUpdateUser={(u) => setUsers(prev => prev.map(usr => usr.id === u.id ? u : usr))} 
+                    onDeleteUser={(id) => setUsers(prev => prev.filter(u => u.id !== id))} 
                     onFullSyncToSheets={handleFullSync}
                 />
             )}
