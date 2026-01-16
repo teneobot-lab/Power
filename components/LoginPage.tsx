@@ -22,7 +22,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
   
   // Server Config State
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [tempVpsUrl, setTempVpsUrl] = useState(settings?.vpsApiUrl || '');
+  const [tempVpsUrl, setTempVpsUrl] = useState(settings?.vpsApiUrl || '/');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
   const [connectionMsg, setConnectionMsg] = useState('');
 
@@ -62,7 +62,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
   };
 
   const handleFactoryReset = () => {
-    if (confirm("Reset Data Lokal? Ini akan menghapus pengaturan yang tersimpan di browser.")) {
+    if (confirm("Reset Data Lokal? Ini akan menghapus pengaturan yang tersimpan di browser dan kembali ke default (Proxy Mode).")) {
         localStorage.clear();
         window.location.reload();
     }
@@ -187,22 +187,25 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                     <button onClick={() => setIsConfigOpen(false)}><X className="w-5 h-5 text-slate-400 hover:text-white" /></button>
                 </div>
                 <div className="p-6 space-y-4">
-                    <p className="text-xs text-slate-400 mb-4">
-                        Masukkan URL API VPS Anda di sini untuk menghubungkan aplikasi ke database MySQL sebelum login.
+                    <p className="text-xs text-slate-400 mb-2">
+                        Masukkan URL API VPS atau gunakan tanda <code>/</code> untuk koneksi otomatis (Proxy).
                     </p>
                     <div>
                         <label className="block text-xs font-bold text-slate-400 uppercase mb-2">VPS API URL</label>
                         <div className="flex gap-2">
                             <input 
-                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500" 
-                                placeholder="http://xxx.xxx.xxx.xxx:3000"
+                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none focus:ring-2 focus:ring-blue-500 font-mono" 
+                                placeholder="http://ip-vps:3000 atau /"
                                 value={tempVpsUrl}
                                 onChange={(e) => setTempVpsUrl(e.target.value)}
                             />
                         </div>
+                        <p className="text-[10px] text-slate-500 mt-2">
+                            Tips: Masukkan <code className="text-white font-mono bg-slate-800 px-1 rounded">/</code> jika aplikasi di-hosting satu domain dengan backend atau menggunakan Proxy Mode.
+                        </p>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 mt-4">
                         <button onClick={handleTestConnection} className="flex-1 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold hover:bg-slate-700 flex items-center justify-center gap-2 border border-slate-700">
                             {connectionStatus === 'checking' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wifi className="w-3 h-3" />}
                             Tes Koneksi

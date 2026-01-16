@@ -138,17 +138,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       // Logic: Hash password if provided
       if (userFormData.password && userFormData.password.trim() !== '') {
-          // If editing, assume input is new plain text password -> hash it
-          // If new user, assume input is plain text -> hash it
-          // NOTE: We don't have a way to know if it's already hashed here easily without a flag,
-          // but since this form is for manual entry, we assume it's plain text.
           finalPassword = await hashPassword(userFormData.password);
       } else if (editingUser) {
-          // If editing and password field is empty, keep existing hash
           finalPassword = editingUser.password;
       } else {
-          // New user but no password provided? (Should be blocked by 'required' attribute, but just in case)
-          // Default to '123456' hashed if empty for new user
           finalPassword = await hashPassword('123456');
       }
 
@@ -164,34 +157,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (editingUser) onUpdateUser(newUser); else onAddUser(newUser);
       setIsUserModalOpen(false);
   };
-
-  // ... (Keep existing command strings constants) ...
-  const vpsSetupCmd = `# Setup Command (omitted for brevity, same as before)`; 
-  // (In real code, keep the constants defined in previous version, just omitting here to save space in this XML block if they didn't change logic, but I will include them to ensure file integrity)
-  
-  const vpsSetupCmdFull = `# 1. Update Server\nsudo apt update && sudo apt upgrade -y\n\n# 2. Install Curl & Git\nsudo apt install -y curl git unzip\n\n# 3. Install Node.js 18 (Standard LTS)\ncurl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -\nsudo apt install -y nodejs\n\n# 4. Install MySQL Server\nsudo apt install -y mysql-server\n\n# 5. Cek Versi\nnode -v\nmysql --version`;
-  const envCode = `DB_HOST=127.0.0.1\nDB_USER=smartstock_user\nDB_PASSWORD=smartstock_password\nDB_NAME=smartstock_db\nPORT=3000`;
-  const mysqlUserSetupCmd = `# Masuk ke MySQL sebagai root\nsudo mysql -u root\n\nCREATE USER 'smartstock_user'@'localhost' IDENTIFIED BY 'smartstock_password';\nGRANT ALL PRIVILEGES ON *.* TO 'smartstock_user'@'localhost' WITH GRANT OPTION;\nFLUSH PRIVILEGES;\nEXIT;`;
-  const packageJsonCode = `{\n  "name": "smartstock-backend",\n  "version": "1.0.0",\n  "main": "index.js",\n  "scripts": {\n    "start": "node index.js",\n    "db:setup": "node setupDb.js"\n  },\n  "dependencies": {\n    "express": "^4.18.2",\n    "mysql2": "^3.6.5",\n    "cors": "^2.8.5",\n    "dotenv": "^16.3.1",\n    "body-parser": "^1.20.2"\n  }\n}`;
-  const setupDbCode = `require('dotenv').config();\nconst mysql = require('mysql2/promise');\n\nasync function setupDatabase() {\n    // ... (Code as before) ...\n}\nsetupDatabase();`; // Shortened for brevity in this specific update block, assuming user copies from full file if needed, but I should probably keep full content if I replace the whole file. 
-  // RE-INSERTING FULL CONTENT FOR SAFETY:
-  const setupDbCodeFull = `require('dotenv').config();
-const mysql = require('mysql2/promise');
-
-async function setupDatabase() {
-    console.log('🚀 Menyiapkan Database SmartStock...');
-    const config = {
-        host: process.env.DB_HOST || '127.0.0.1',
-        user: process.env.DB_USER || 'root',
-        password: process.env.DB_PASSWORD || '',
-        multipleStatements: true
-    };
-    const dbName = process.env.DB_NAME || 'smartstock_db';
-    // ... tables definition ...
-    // ... logic ...
-    // See server/setupDb.js for full content
-}`; 
-  const indexJsCode = `const express = require('express');\n// ... (Standard Express Boilerplate) ...\n// See server/index.js`;
 
   return (
     <div className="space-y-6 animate-fade-in flex flex-col h-full overflow-hidden">
@@ -233,12 +198,21 @@ async function setupDatabase() {
                   <div>
                     <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend API URL</label>
                     <div className="flex flex-col sm:flex-row gap-3">
-                        <input type="text" className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50" placeholder="http://ip-vps:3000" value={tempSettings.vpsApiUrl} onChange={(e) => setTempSettings({...tempSettings, vpsApiUrl: e.target.value})} />
+                        <input 
+                            type="text" 
+                            className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50" 
+                            placeholder="http://ip-vps:3000 atau /" 
+                            value={tempSettings.vpsApiUrl} 
+                            onChange={(e) => setTempSettings({...tempSettings, vpsApiUrl: e.target.value})} 
+                        />
                         <button onClick={() => handleTestConnection('vps')} className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-2">
                            {connectionStatus === 'checking' && activeTab === 'settings' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
                            Tes VPS
                         </button>
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-2">
+                        Gunakan <code className="bg-slate-100 px-1 rounded font-mono text-slate-600">/</code> jika aplikasi satu domain dengan backend (Proxy).
+                    </p>
                     {connectionMsg && activeTab === 'settings' && (
                       <div className={`mt-3 p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
                           {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
@@ -256,7 +230,7 @@ async function setupDatabase() {
             </div>
           )}
           
-          {/* ... (Other Tabs like Terminal, Migration, Cloud remain similar, hiding for brevity in this specific update logic, focus on Users tab) ... */}
+          {/* ... Other Tabs Content ... */}
           
           {activeTab === 'users' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-in fade-in duration-300">
@@ -283,8 +257,6 @@ async function setupDatabase() {
                </div>
             </div>
           )}
-
-          {/* ... (Terminal, Migration, Cloud tabs code is here in real app) ... */}
         </div>
       </div>
       
@@ -300,7 +272,6 @@ async function setupDatabase() {
                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.name || ''} onChange={e => setUserFormData({...userFormData, name: e.target.value})} /></div>
                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Username</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.username || ''} onChange={e => setUserFormData({...userFormData, username: e.target.value})} /></div>
                
-               {/* Password Field Update: Editable for both Add and Edit */}
                <div>
                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
                        Password {editingUser ? '(Kosongkan jika tidak ingin mengubah)' : '(Wajib)'}
@@ -311,7 +282,7 @@ async function setupDatabase() {
                        placeholder={editingUser ? "••••••••" : "Masukkan password baru"}
                        value={userFormData.password || ''}
                        onChange={e => setUserFormData({...userFormData, password: e.target.value})}
-                       required={!editingUser} // Required only when adding new user
+                       required={!editingUser} 
                    />
                </div>
 
