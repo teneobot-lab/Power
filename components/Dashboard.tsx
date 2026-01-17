@@ -31,21 +31,21 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
   const stats = useMemo(() => {
     const totalItems = items.length;
-    const lowStockCount = items.filter(i => i.minLevel > 0 && i.quantity <= i.minLevel).length;
-    const totalValue = items.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0);
-    const totalStockCount = items.reduce((acc, curr) => acc + curr.quantity, 0);
+    const lowStockCount = items.filter(i => (i.minLevel || 0) > 0 && (i.quantity || 0) <= (i.minLevel || 0)).length;
+    const totalValue = items.reduce((acc, curr) => acc + ((curr.quantity || 0) * (curr.unitPrice || 0)), 0);
+    const totalStockCount = items.reduce((acc, curr) => acc + (curr.quantity || 0), 0);
     return { totalItems, lowStockCount, totalValue, totalStockCount };
   }, [items]);
 
   const lowStockItems = useMemo(() => {
-    return items.filter(i => i.minLevel > 0 && i.quantity <= i.minLevel)
-      .sort((a, b) => (a.quantity / a.minLevel) - (b.quantity / b.minLevel));
+    return items.filter(i => (i.minLevel || 0) > 0 && (i.quantity || 0) <= (i.minLevel || 0))
+      .sort((a, b) => ((a.quantity || 0) / (a.minLevel || 1)) - ((b.quantity || 0) / (b.minLevel || 1)));
   }, [items]);
 
   const categoryData = useMemo(() => {
     const counts: {[key: string]: number} = {};
     items.forEach(item => {
-      counts[item.category] = (counts[item.category] || 0) + item.quantity;
+      counts[item.category || 'Lainnya'] = (counts[item.category || 'Lainnya'] || 0) + (item.quantity || 0);
     });
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
   }, [items]);
@@ -53,7 +53,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
   const topItemsData = useMemo(() => {
     const counts: Record<string, number> = {};
     transactions.filter(t => t.type === 'OUT').forEach(t => {
-      t.items.forEach(item => { counts[item.itemName] = (counts[item.itemName] || 0) + item.quantityInput; });
+      t.items.forEach(item => { counts[item.itemName] = (counts[item.itemName] || 0) + (item.quantityInput || 0); });
     });
     return Object.entries(counts).map(([name, qty]) => ({
       name: name.length > 12 ? name.substring(0, 12) + '..' : name,
@@ -78,7 +78,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard title="Inventory Valuation" value={`Rp ${stats.totalValue.toLocaleString('id-ID')}`} icon={DollarSign} colorClass="text-slate-100" iconColor="text-blue-500" />
+            <StatCard title="Inventory Valuation" value={`Rp ${(stats.totalValue || 0).toLocaleString('id-ID')}`} icon={DollarSign} colorClass="text-slate-100" iconColor="text-blue-500" />
             <StatCard title="Total Asset Units" value={stats.totalStockCount} icon={Package} colorClass="text-slate-100" iconColor="text-emerald-500" />
             <StatCard title="Critical Alerts" value={stats.lowStockCount} icon={AlertTriangle} colorClass={stats.lowStockCount > 0 ? "text-rose-500" : "text-slate-100"} iconColor={stats.lowStockCount > 0 ? "text-rose-500" : "text-slate-600"} />
             <StatCard title="Catalog Depth" value={stats.totalItems} icon={TrendingUp} colorClass="text-slate-100" iconColor="text-indigo-500" />
@@ -101,14 +101,14 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
                         </BarChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div className="h-full flex items-center justify-center text-slate-600 text-xs font-bold uppercase tracking-widest italic">No flow data recorded</div>
+                        <div className="h-full flex items-center justify-center text-slate-600 text-xs font-bold uppercase tracking-widest italic">Belum ada data alur keluar</div>
                     )}
                 </div>
             </div>
 
             <div className="bg-slate-900/40 p-8 rounded-3xl border border-slate-800 shadow-xl">
                 <h3 className="text-sm font-black text-slate-400 mb-8 uppercase tracking-widest flex items-center gap-2">
-                   <Box className="w-4 h-4 text-indigo-500" /> Segment Allocation
+                   <Box className="w-4 h-4 text-indigo-500" /> Alokasi Segmen
                 </h3>
                 <div className="h-[300px] w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -136,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
                 <div className="flex items-center justify-between mb-8">
                     <h3 className="text-sm font-black text-slate-300 uppercase tracking-[0.2em] flex items-center gap-3">
                         <AlertTriangle className="w-5 h-5 text-rose-500 glow-icon" />
-                        Critical Depletion Protocol
+                        Protokol Deplesi Kritis
                     </h3>
                 </div>
                 {lowStockItems.length > 0 ? (
@@ -148,17 +148,17 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
                                       <p className="text-xs font-black text-slate-100 uppercase truncate leading-tight">{item.name}</p>
                                       <p className="text-[10px] text-slate-600 font-mono tracking-tighter mt-1">{item.sku}</p>
                                   </div>
-                                  <span className="text-rose-500 font-black text-sm">{item.quantity}</span>
+                                  <span className="text-rose-500 font-black text-sm">{item.quantity || 0}</span>
                                 </div>
                                 <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
                                     <div 
                                         className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full" 
-                                        style={{ width: `${Math.min(100, (item.quantity / item.minLevel) * 100)}%` }}
+                                        style={{ width: `${Math.min(100, ((item.quantity || 0) / (item.minLevel || 1)) * 100)}%` }}
                                     />
                                 </div>
                                 <div className="flex justify-between mt-2 text-[9px] font-bold text-slate-600 uppercase tracking-tighter">
-                                   <span>Availability: {((item.quantity/item.minLevel)*100).toFixed(0)}%</span>
-                                   <span>Threshold: {item.minLevel}</span>
+                                   <span>Ketersediaan: {(((item.quantity || 0) / (item.minLevel || 1)) * 100).toFixed(0)}%</span>
+                                   <span>Ambang: {item.minLevel || 0}</span>
                                 </div>
                             </div>
                         ))}
@@ -166,7 +166,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
                 ) : (
                     <div className="py-20 flex flex-col items-center justify-center text-slate-600 opacity-30">
                         <ShieldCheck className="w-16 h-16 mb-4" strokeWidth={1} />
-                        <p className="text-xs font-black tracking-widest uppercase italic">All asset levels nominal</p>
+                        <p className="text-xs font-black tracking-widest uppercase italic">Semua stok berada di level aman</p>
                     </div>
                 )}
             </div>

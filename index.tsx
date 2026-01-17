@@ -11,9 +11,9 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Error Boundary Sederhana untuk menangkap crash saat render
-// Fixed: Using React.Component explicitly with typed props and state generics to ensure this.props is correctly defined
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Error Boundary for catching render-time crashes
+// Fixed: Explicitly extending Component with type generics to resolve "Property 'state'/'props' does not exist" errors
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = {
