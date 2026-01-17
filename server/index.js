@@ -1,24 +1,26 @@
-
 const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const { exec } = require('child_process');
-const crypto = require('crypto'); // Built-in Node module
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// =======================
+// MIDDLEWARE
+// =======================
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// Konfigurasi Database
+// =======================
+// DATABASE CONFIG
+// =======================
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '', 
+    password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'smartstock_db',
     dateStrings: true
 };
@@ -26,226 +28,149 @@ const dbConfig = {
 let pool;
 let dbConnected = false;
 
-// Fungsi Koneksi Database (Retry Pattern)
+// =======================
+// INIT DATABASE
+// =======================
 async function initDb() {
     try {
         pool = mysql.createPool(dbConfig);
-        const connection = await pool.getConnection();
-        console.log('✅ DATABASE TERHUBUNG: SmartStock DB Ready!');
+        const conn = await pool.getConnection();
+        console.log('✅ DATABASE CONNECTED');
+
         dbConnected = true;
-        
-        // --- AUTO-FIX & RESET ADMIN PASSWORD ---
-        // Hash SHA-256 untuk 'admin22'
-        const ADMIN_HASH = '3d3467611599540c49097e3a2779836183c50937617565437172083626217315';
-        
-        try {
-            // Pastikan user admin ada dan passwordnya di-reset ke default
-            const [rows] = await connection.query("SELECT * FROM users WHERE username = 'admin'");
-            if (rows.length === 0) {
-                console.log("⚠️ User 'admin' tidak ditemukan. Membuat baru...");
-                await connection.query("INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', ?, 'admin', 'active', NOW())", [ADMIN_HASH]);
-            } else {
-                console.log("ℹ️ Mereset password user 'admin' ke default (admin22) untuk menjamin akses...");
-                await connection.query("UPDATE users SET password = ?, status = 'active' WHERE username = 'admin'", [ADMIN_HASH]);
-            }
-        } catch (err) {
-            console.error("Gagal melakukan auto-fix user:", err.message);
+
+        // =======================
+        // CREATE DEFAULT ADMIN (ONLY IF NOT EXISTS)
+        // password: admin22
+        // =======================
+        const ADMIN_HASH = crypto
+            .createHash('sha256')
+            .update('admin22')
+            .digest('hex');
+
+        const [rows] = await conn.query(
+            "SELECT id FROM users WHERE username = 'admin'"
+        );
+
+        if (rows.length === 0) {
+            console.log('⚠️ Admin not found, creating default admin...');
+            await conn.query(
+                `INSERT INTO users (name, username, password, role, status, last_login)
+                 VALUES (?, ?, ?, ?, ?, NOW())`,
+                ['Admin Utama', 'admin', ADMIN_HASH, 'admin', 'active']
+            );
         }
 
-        connection.release();
+        conn.release();
     } catch (err) {
-        console.error('❌ DATABASE ERROR:', err.message);
+        console.error('❌ DB ERROR:', err.message);
         dbConnected = false;
-        setTimeout(initDb, 5000); 
+        setTimeout(initDb, 5000);
     }
 }
 
-// Helper: Snake_case -> CamelCase
+// =======================
+// UTILS
+// =======================
 const toCamel = (row) => {
     const res = {};
     for (let key in row) {
         const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
         let val = row[key];
-        if (['alternativeUnits', 'items', 'photos'].includes(camel) && typeof val === 'string') {
-            try { val = JSON.parse(val); } catch(e) { val = []; }
+        if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+            try { val = JSON.parse(val); } catch {}
         }
         res[camel] = val;
     }
     return res;
 };
 
-// --- ROUTES API ---
-
-app.get('/', (req, res) => {
-    res.json({
-        status: 'online',
-        database_status: dbConnected ? 'CONNECTED' : 'DISCONNECTED'
-    });
-});
-
 const checkDb = (req, res, next) => {
-    if (!pool || !dbConnected) return res.status(503).json({ status: 'error', message: 'Database Offline' });
+    if (!dbConnected || !pool) {
+        return res.status(503).json({ status: 'error', message: 'Database offline' });
+    }
     next();
 };
 
-// --- AUTH ENDPOINT (UPDATED WITH LOGS) ---
+// =======================
+// ROUTES
+// =======================
+app.get('/', (req, res) => {
+    res.json({
+        status: 'online',
+        database: dbConnected ? 'connected' : 'offline'
+    });
+});
+
+// =======================
+// LOGIN
+// =======================
 app.post('/api/login', checkDb, async (req, res) => {
     const { username, password } = req.body;
-    console.log(`🔐 Login Attempt: Username='${username}'`);
 
     try {
-        const [rows] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
+        const [rows] = await pool.query(
+            'SELECT * FROM users WHERE username = ? LIMIT 1',
+            [username]
+        );
+
         if (rows.length === 0) {
-            console.log("❌ Login Gagal: Username tidak ditemukan di DB");
-            return res.status(401).json({ status: 'error', message: 'Username tidak ditemukan' });
+            return res.status(401).json({ status: 'error', message: 'User tidak ditemukan' });
         }
 
         const user = rows[0];
         const dbPassword = user.password || '';
-        
-        // 1. Cek Plain Text (Jika user dibuat manual di database tanpa hash)
+
+        // 1️⃣ Plain text (legacy)
         if (dbPassword === password) {
-            console.log("✅ Login Berhasil (Plain Text)");
             await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
             return res.json({ status: 'success', data: toCamel(user) });
         }
 
-        // 2. Cek Hash (SHA-256)
-        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
+        // 2️⃣ SHA-256
+        const inputHash = crypto
+            .createHash('sha256')
+            .update(password)
+            .digest('hex');
+
         if (dbPassword === inputHash) {
-            console.log("✅ Login Berhasil (Hashed)");
             await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
             return res.json({ status: 'success', data: toCamel(user) });
         }
 
-        console.log(`❌ Login Gagal: Password Mismatch.`);
-        console.log(`   Input: '${password}'`);
-        console.log(`   Input Hash: ${inputHash}`);
-        console.log(`   DB Stored : ${dbPassword}`);
-        
-        res.status(401).json({ status: 'error', message: 'Password salah' });
-    } catch (e) {
-        console.error("Login Error:", e);
-        res.status(500).json({ status: 'error', message: e.message });
+        return res.status(401).json({ status: 'error', message: 'Password salah' });
+
+    } catch (err) {
+        console.error('LOGIN ERROR:', err);
+        res.status(500).json({ status: 'error', message: 'Server error' });
     }
 });
 
-// --- SYSTEM TERMINAL ENDPOINT ---
-app.post('/api/terminal', async (req, res) => {
-    const { command } = req.body;
-    
-    if (!command) return res.status(400).json({ output: 'Command is required' });
-
-    console.log(`Executing command: ${command}`);
-
-    exec(command, { cwd: __dirname }, (error, stdout, stderr) => {
-        if (error) {
-            return res.json({ 
-                status: 'error', 
-                output: stderr || error.message 
-            });
-        }
-        res.json({ 
-            status: 'success', 
-            output: stdout || 'Command executed successfully (no output).'
-        });
-    });
-});
-
+// =======================
+// DATA API
+// =======================
 app.get('/api/data', checkDb, async (req, res) => {
     try {
-        const [inv] = await pool.query('SELECT * FROM inventory');
-        const [tx] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
-        const [rejInv] = await pool.query('SELECT * FROM reject_inventory');
-        const [rejLogs] = await pool.query('SELECT * FROM rejects ORDER BY timestamp DESC');
-        const [sup] = await pool.query('SELECT * FROM suppliers');
-        const [usr] = await pool.query('SELECT * FROM users');
-        const [setRows] = await pool.query('SELECT * FROM settings');
-
-        const settings = {};
-        setRows.forEach(r => {
-            let v = r.setting_value;
-            try { if(v.startsWith('[') || v.startsWith('{')) v = JSON.parse(v); } catch(e){}
-            settings[r.setting_key] = v;
-        });
+        const [inventory] = await pool.query('SELECT * FROM inventory');
+        const [transactions] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
+        const [users] = await pool.query('SELECT * FROM users');
 
         res.json({
             status: 'success',
             data: {
-                inventory: inv.map(toCamel),
-                transactions: tx.map(toCamel),
-                reject_inventory: rejInv.map(toCamel),
-                rejects: rejLogs.map(toCamel),
-                suppliers: sup.map(toCamel),
-                users: usr.map(toCamel),
-                settings
+                inventory: inventory.map(toCamel),
+                transactions: transactions.map(toCamel),
+                users: users.map(toCamel)
             }
         });
-    } catch (e) {
-        res.status(500).json({ status: 'error', message: e.message });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: err.message });
     }
 });
 
-app.post('/api/sync', checkDb, async (req, res) => {
-    const { type, data } = req.body;
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction();
-        const mapCols = (s) => {
-            const m = { 
-                'baseUnit':'base_unit', 'minLevel':'min_level', 'unitPrice':'unit_price', 
-                'lastUpdated':'last_updated', 'supplierName':'supplier_name', 
-                'poNumber':'po_number', 'riNumber':'ri_number',
-                'alternativeUnits': 'alternative_units', 'contactPerson': 'contact_person',
-                'lastLogin': 'last_login', 'unit2': 'unit2', 'ratio2': 'ratio2',
-                'unit3': 'unit3', 'ratio3': 'ratio3'
-            };
-            return m[s] || s.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
-        };
-
-        if (type === 'settings') {
-            await conn.query('DELETE FROM settings');
-            for (let k in data) {
-                let v = data[k];
-                if (typeof v === 'object') v = JSON.stringify(v);
-                await conn.query('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [k, v]);
-            }
-        } else {
-            let table = type;
-            if (type === 'inventory') table = 'inventory';
-            if (type === 'transactions') table = 'transactions';
-            if (type === 'rejectItems' || type === 'reject_inventory') table = 'reject_inventory';
-            if (type === 'rejectLogs' || type === 'rejects') table = 'rejects';
-            if (type === 'suppliers') table = 'suppliers';
-            if (type === 'users') table = 'users';
-            
-            await conn.query(`DELETE FROM \`${table}\``);
-            
-            if (data && data.length > 0) {
-                const keys = Object.keys(data[0]);
-                const cols = keys.map(mapCols);
-                const values = data.map(item => keys.map(k => {
-                    let v = item[k];
-                    if (typeof v === 'object' && v !== null) return JSON.stringify(v);
-                    
-                    const isIsoDate = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v);
-                    if (isIsoDate) return v.slice(0, 19).replace('T', ' ');
-                    
-                    return v;
-                }));
-                await conn.query(`INSERT INTO \`${table}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES ?`, [values]);
-            }
-        }
-        await conn.commit();
-        res.json({ status: 'success' });
-    } catch (e) {
-        await conn.rollback();
-        res.status(500).json({ status: 'error', message: e.message });
-    } finally {
-        conn.release();
-    }
-});
-
+// =======================
+// START SERVER
+// =======================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
 });
