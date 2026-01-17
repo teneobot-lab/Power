@@ -7,19 +7,6 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-interface FullState {
-  inventory: InventoryItem[];
-  transactions: Transaction[];
-  reject_inventory: RejectItem[];
-  rejects: RejectLog[];
-  suppliers: Supplier[];
-  users: User[];
-  settings: Partial<AppSettings>;
-}
-
-/**
- * Membangun URL API yang benar berdasarkan input pengaturan user
- */
 const buildUrl = (baseUrl: string, path: string): string => {
     if (!baseUrl) return path;
     const isGas = baseUrl.includes('script.google.com');
@@ -27,45 +14,32 @@ const buildUrl = (baseUrl: string, path: string): string => {
 
     const cleanBase = baseUrl.replace(/\/$/, '');
     
-    // Jika user menginput path relatif (seperti '/' atau '/api'), gunakan proxy.
-    // Jika user menginput URL lengkap (http://...), tambahkan /api jika belum ada.
     if (cleanBase.startsWith('http')) {
         const hasApiPrefix = cleanBase.endsWith('/api') || cleanBase.includes('/api/');
-        if (!hasApiPrefix) {
-            return `${cleanBase}/api${path}`;
-        }
-        return `${cleanBase}${path}`;
-    } else if (cleanBase === '' || cleanBase === '/') {
-        return `/api${path}`;
-    } else if (cleanBase === '/api') {
-        return `/api${path}`;
+        return hasApiPrefix ? `${cleanBase}${path}` : `${cleanBase}/api${path}`;
+    } else {
+        const normalized = cleanBase === '' || cleanBase === '/' ? '/api' : (cleanBase.startsWith('/') ? cleanBase : `/${cleanBase}`);
+        return `${normalized}${path}`;
     }
-    
-    return `${cleanBase}${path}`;
 };
 
-export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
+export const fetchBackendData = async (baseUrl: string): Promise<any> => {
   try {
     const url = buildUrl(baseUrl, '/data');
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (response.status === 503) {
-        console.warn("⚠️ Server online, tapi MySQL Offline.");
-        return null;
+    const response = await fetch(url);
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({ message: 'Server Error' }));
+        throw new Error(err.message || `Error ${response.status}`);
     }
-
-    if (!response.ok) return null;
-    const json: ApiResponse<FullState> = await response.json();
-    return (json.status === 'success' && json.data) ? json.data : null;
+    const json = await response.json();
+    return json.data;
   } catch (error: any) {
-    return null;
+    console.error("Fetch failed:", error.message);
+    throw error;
   }
 };
 
-export const loginUser = async (baseUrl: string, username: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
+export const loginUser = async (baseUrl: string, username: string, password: string): Promise<any> => {
     try {
         const url = buildUrl(baseUrl, '/login');
         const response = await fetch(url, {
@@ -73,94 +47,61 @@ export const loginUser = async (baseUrl: string, username: string, password: str
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
-
         const json = await response.json();
-        if (response.ok && json.status === 'success') {
-            return { success: true, user: json.data };
-        } else {
-            return { success: false, message: json.message || 'Login Gagal' };
-        }
+        return { success: response.ok && json.status === 'success', ...json };
     } catch (error: any) {
-        return { success: false, message: 'Gagal terhubung ke server backend.' };
+        return { success: false, message: 'Gagal terhubung ke backend.' };
     }
 };
 
-export const syncBackendData = async (
-  baseUrl: string, 
-  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'reject_inventory' | 'rejects', 
-  data: any
-): Promise<{ success: boolean; message?: string }> => {
-  if (!baseUrl) return { success: false, message: 'URL Backend belum diatur.' };
-  
+export const syncBackendData = async (baseUrl: string, type: string, data: any): Promise<any> => {
   try {
     const url = buildUrl(baseUrl, '/sync');
-    const isGas = baseUrl.includes('script.google.com');
-
     const response = await fetch(url, {
       method: 'POST',
       body: JSON.stringify({ type, data }),
-      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
+      headers: { 'Content-Type': 'application/json' }
     });
-
-    if (!response.ok) {
-        const errJson = await response.json().catch(() => ({}));
-        return { success: false, message: errJson.message || `Server Error (${response.status})` };
-    }
-    
     const json = await response.json();
-    return { success: json.status === 'success', message: json.message };
+    return { success: response.ok && json.status === 'success', message: json.message };
   } catch (error: any) {
-    return { success: false, message: 'Masalah Jaringan: ' + error.message };
+    return { success: false, message: error.message };
   }
 };
 
-/**
- * Tes koneksi mendalam (Deep Ping)
- */
-export const checkServerConnection = async (baseUrl: string): Promise<{ 
-  online: boolean; 
-  message: string; 
-  dbStatus?: 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'; 
-}> => {
-  if (!baseUrl) return { online: false, message: 'URL tidak valid.' };
+export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string; dbStatus?: string }> => {
+  if (!baseUrl) return { online: false, message: 'URL Kosong' };
 
-  // Keamanan Mixed Content
   if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
       return { 
           online: false, 
-          message: 'Peringatan Keamanan: Browser memblokir HTTP karena site ini HTTPS. Gunakan path "/api" (Proxy).' 
+          message: 'DIBLOKIR BROWSER: Gunakan "/api" (Proxy) karena site ini HTTPS sedangkan VPS menggunakan HTTP.' 
       };
   }
 
   try {
     const url = buildUrl(baseUrl, '/health');
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); 
-
-    const response = await fetch(url, { method: 'GET', signal: controller.signal });
-    clearTimeout(timeoutId);
+    const id = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
 
     if (response.status === 503) {
-        return { online: true, message: 'Backend Aktif, tapi MySQL Offline.', dbStatus: 'DISCONNECTED' };
+        const data = await response.json();
+        return { online: true, dbStatus: 'DISCONNECTED', message: `Server Aktif, tapi MySQL Error: ${data.message}` };
     }
 
     if (response.ok) {
-        const data = await response.json().catch(() => null);
-        if (data && data.status === 'online') {
-            return { 
-                online: true, 
-                message: 'Terhubung ke Backend & MySQL.', 
-                dbStatus: data.database === 'connected' ? 'CONNECTED' : 'DISCONNECTED'
-            };
-        }
-        return { online: true, message: 'Server merespon (Format Unknown).', dbStatus: 'UNKNOWN' };
-    } else {
-        return { online: false, message: `Error HTTP ${response.status}: Server bermasalah.` };
+        const data = await response.json();
+        return { 
+            online: true, 
+            dbStatus: data.database === 'connected' ? 'CONNECTED' : 'DISCONNECTED',
+            message: data.database === 'connected' ? 'Koneksi Sempurna: Server & Database OK' : 'Database MySQL Offline'
+        };
     }
-  } catch (error: any) {
-    return { 
-      online: false, 
-      message: error.name === 'AbortError' ? 'Timeout: Server terlalu lambat merespon.' : 'Server tidak dapat dijangkau (CORS/Down).' 
-    };
+    return { online: false, message: `Server Merespon Error: ${response.status}` };
+  } catch (e: any) {
+    return { online: false, message: 'VPS Tidak Dapat Dijangkau (Server Mati atau Salah Port).' };
   }
 };

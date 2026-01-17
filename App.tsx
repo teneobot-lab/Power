@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { InventoryItem, AppView, Transaction, Supplier, User, AppSettings, ToastMessage, ToastType, TablePreferences, RejectLog, RejectItem } from './types';
 import { INITIAL_INVENTORY, INITIAL_SUPPLIERS, INITIAL_USERS, DEFAULT_SETTINGS, DEFAULT_TABLE_PREFS } from './constants';
@@ -27,16 +26,17 @@ const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [tablePrefs, setTablePrefs] = useState<TablePreferences>(DEFAULT_TABLE_PREFS);
   
-  // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-
   const [currentView, setCurrentView] = useState<AppView>(AppView.DASHBOARD);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Detailed Connectivity States
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [dbStatus, setDbStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'>('UNKNOWN');
-  const [isSaving, setIsSaving] = useState(false);
+  const [connErrorMessage, setConnErrorMessage] = useState('');
   
+  const [isSaving, setIsSaving] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
@@ -75,7 +75,7 @@ const App: React.FC = () => {
     const activeSettings = customSettings || loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
     const vpsUrl = activeSettings.vpsApiUrl;
     
-    // Fallback load lokal
+    // Default local load
     if (!customSettings) {
         setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
         setTransactions(loadFromStorage('smartstock_transactions', []));
@@ -89,14 +89,15 @@ const App: React.FC = () => {
     if (vpsUrl && vpsUrl !== '') {
       try {
         const conn = await checkServerConnection(vpsUrl);
-        setDbStatus(conn.dbStatus || 'UNKNOWN');
+        // Fix: Casting dbStatus to specific union type as expected by setDbStatus (1-based line 93)
+        setDbStatus((conn.dbStatus as 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN') || 'UNKNOWN');
+        setConnErrorMessage(conn.message);
         
-        // Benar-benar cloud jika server ONLINE dan DB CONNECTED
-        const online = conn.online && conn.dbStatus === 'CONNECTED';
-        setIsCloudConnected(online);
+        const fullyOnline = conn.online && conn.dbStatus === 'CONNECTED';
+        setIsCloudConnected(fullyOnline);
 
-        if (online) {
-          const cloudData = await fetchBackendData(vpsUrl);
+        if (fullyOnline) {
+          const cloudData = await fetchBackendData(vpsUrl).catch(() => null);
           if (cloudData) {
             if (cloudData.inventory) setItems(cloudData.inventory);
             if (cloudData.transactions) setTransactions(cloudData.transactions);
@@ -104,14 +105,17 @@ const App: React.FC = () => {
             if (cloudData.reject_inventory) setRejectItems(cloudData.reject_inventory);
             if (cloudData.rejects) setRejectLogs(cloudData.rejects);
             if (cloudData.suppliers) setSuppliers(cloudData.suppliers);
-            showToast('Data Cloud Berhasil Dimuat', 'success');
+            showToast('Koneksi Sinkron: Data MySQL Berhasil Dimuat', 'success');
           }
         } else if (conn.online && conn.dbStatus === 'DISCONNECTED') {
-            showToast('Server Backend Online, tapi Database MySQL Terputus!', 'error');
+            showToast(conn.message, 'warning');
+        } else if (!conn.online) {
+            showToast(conn.message, 'error');
         }
-      } catch (error) {
+      } catch (error: any) {
         setIsCloudConnected(false);
         setDbStatus('DISCONNECTED');
+        setConnErrorMessage(error.message);
       }
     } else {
       setIsCloudConnected(false);
@@ -125,9 +129,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const savedSession = sessionStorage.getItem('smartstock_session_user');
     if (savedSession) {
-        try {
-            setCurrentUser(JSON.parse(savedSession));
-        } catch (e) {}
+        try { setCurrentUser(JSON.parse(savedSession)); } catch (e) {}
     }
   }, []);
 
@@ -154,49 +156,9 @@ const App: React.FC = () => {
   const syncToCloud = async (type: string, data: any) => {
     if (isMounted.current && isCloudConnected && dbStatus === 'CONNECTED') {
       setIsSaving(true);
-      const res = await syncBackendData(settings.vpsApiUrl, type as any, data);
-      if (!res.success) {
-          showToast(`Gagal Sinkronisasi ${type}: ${res.message}`, 'error');
-      }
+      const res = await syncBackendData(settings.vpsApiUrl, type, data);
+      if (!res.success) showToast(`Sync Gagal (${type}): ${res.message}`, 'error');
       setIsSaving(false);
-    }
-  };
-
-  const handleFullSync = async () => {
-    if (!settings.viteGasUrl || !settings.viteGasUrl.includes('script.google.com')) {
-        showToast('URL Google Apps Script belum dikonfigurasi!', 'warning');
-        return false;
-    }
-    
-    setIsSaving(true);
-    try {
-        const fullData = {
-            inventory: items,
-            transactions: transactions,
-            rejectItems: rejectItems,
-            rejectLogs: rejectLogs,
-            suppliers: suppliers,
-            users: users,
-            settings: settings
-        };
-        
-        const result = await syncBackendData(settings.viteGasUrl, 'full_sync' as any, fullData);
-        
-        if (result.success) {
-            showToast('Sync Google Sheets Berhasil!', 'success');
-            const now = new Date().toISOString();
-            setSettings(prev => ({ ...prev, lastSheetSync: now }));
-            saveToStorage('smartstock_settings', { ...settings, lastSheetSync: now });
-            return true;
-        } else {
-            showToast('Gagal Sync ke Spreadsheet: ' + (result.message || 'Unknown error'), 'error');
-            return false;
-        }
-    } catch (e: any) {
-        showToast('Kesalahan Jaringan: ' + e.message, 'error');
-        return false;
-    } finally {
-        setIsSaving(false);
     }
   };
 
@@ -228,25 +190,13 @@ const App: React.FC = () => {
     showToast(`Transaksi ${transaction.type} diproses`, 'success');
   };
 
-  const updateTransaction = (updatedTx: Transaction) => {
-    setTransactions(prev => prev.map(tx => tx.id === updatedTx.id ? updatedTx : tx));
-    showToast('Transaksi diperbarui', 'success');
-  };
-
-  const deleteTransaction = (id: string) => {
-    setTransactions(prev => prev.filter(tx => tx.id !== id));
-    showToast('Transaksi dihapus', 'warning');
-  };
-
   const calculateStockChange = (currentItems: InventoryItem[], tx: Transaction): InventoryItem[] => {
     const newItems = [...currentItems];
     tx.items.forEach(txItem => {
       const index = newItems.findIndex(i => i.id === txItem.itemId);
       if (index !== -1) {
-        const currentQty = newItems[index].quantity;
-        const change = txItem.totalBaseQuantity;
-        const finalChange = tx.type === 'IN' ? change : -change; 
-        newItems[index] = { ...newItems[index], quantity: Math.max(0, currentQty + finalChange), lastUpdated: new Date().toISOString() };
+        const finalChange = tx.type === 'IN' ? txItem.totalBaseQuantity : -txItem.totalBaseQuantity; 
+        newItems[index] = { ...newItems[index], quantity: Math.max(0, newItems[index].quantity + finalChange), lastUpdated: new Date().toISOString() };
       }
     });
     return newItems;
@@ -256,13 +206,7 @@ const App: React.FC = () => {
       return (
           <>
             <ToastContainer toasts={toasts} onRemove={removeToast} />
-            <LoginPage 
-                users={users} 
-                onLogin={handleLogin} 
-                isLoadingData={isLoading}
-                settings={settings}
-                onUpdateSettings={handleUpdateSettings}
-            />
+            <LoginPage users={users} onLogin={handleLogin} isLoadingData={isLoading} settings={settings} onUpdateSettings={handleUpdateSettings} />
           </>
       );
   }
@@ -279,9 +223,8 @@ const App: React.FC = () => {
         <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden flex-shrink-0">
           <div className="absolute w-16 h-16 border border-emerald-500/20 rotate-45 transform bg-emerald-900/10 backdrop-blur-sm" />
           <div className="absolute z-10 p-2">
-            {isBlinking ? <EyeOff className="w-12 h-12 text-emerald-500/80 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-100" /> : <Eye className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-100" strokeWidth={1.5} />}
+            {isBlinking ? <EyeOff className="w-12 h-12 text-emerald-500/80" /> : <Eye className="w-12 h-12 text-emerald-400" />}
           </div>
-          <button className="md:hidden absolute right-4 top-4 p-1 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X className="w-5 h-5" /></button>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto flex flex-col custom-scrollbar">
@@ -300,16 +243,6 @@ const App: React.FC = () => {
             <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap hover:bg-rose-900/30 text-rose-400 mt-2"><LogOut className="w-5 h-5 shrink-0" /><span className="font-medium">Keluar</span></button>
           </div>
         </nav>
-        
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white text-xs">
-                {currentUser.name.charAt(0)}
-            </div>
-            <div className="min-w-0">
-                <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                <p className="text-[10px] text-slate-500 uppercase">{currentUser.role}</p>
-            </div>
-        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
@@ -320,9 +253,15 @@ const App: React.FC = () => {
                 <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm">Warehouse Management System</p></div>
             </div>
             <div className="flex items-center gap-3">
-                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' : (dbStatus === 'DISCONNECTED' ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200')}`}>
-                    {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : (dbStatus === 'DISCONNECTED' ? <AlertCircle className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />)}
-                    {isCloudConnected ? 'Cloud Active' : (dbStatus === 'DISCONNECTED' ? 'MySQL Offline' : 'Local Mode')}
+                <div 
+                  title={connErrorMessage}
+                  className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border cursor-help transition-all ${
+                    isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                    (dbStatus === 'DISCONNECTED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200')
+                  }`}
+                >
+                    {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
+                    {isCloudConnected ? 'Koneksi Sempurna' : (dbStatus === 'DISCONNECTED' ? 'MySQL Offline' : 'Mode Lokal/Offline')}
                 </div>
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
                 <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full transition-transform active:rotate-180 duration-500"><RefreshCw className="w-5 h-5" /></button>
@@ -331,8 +270,8 @@ const App: React.FC = () => {
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
             {currentView === AppView.DASHBOARD && <Dashboard items={items} transactions={transactions} />}
             {currentView === AppView.INVENTORY && <InventoryTable items={items} onAddItem={addItem} onBatchAdd={addBatchItems} onUpdateItem={updateItem} onDeleteItem={deleteItem} userRole={currentUser.role} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} />}
-            {currentView === AppView.TRANSACTIONS && <TransactionManager inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={updateTransaction} onDeleteTransaction={deleteTransaction} userRole={currentUser.role} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)} />}
-            {currentView === AppView.REJECT && <RejectManager rejectMasterData={rejectItems} rejectLogs={rejectLogs} onProcessReject={(log) => { setRejectLogs(prev => [log, ...prev]); }} onUpdateRejectLog={(log) => { setRejectLogs(prev => prev.map(l => l.id === log.id ? log : l)); }} onDeleteRejectLog={(id) => { setRejectLogs(prev => prev.filter(l => l.id !== id)); }} onUpdateRejectMaster={setRejectItems} userRole={currentUser.role} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} />}
+            {currentView === AppView.TRANSACTIONS && <TransactionManager inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={updateItem as any} onDeleteTransaction={deleteItem as any} userRole={currentUser.role} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)} />}
+            {currentView === AppView.REJECT && <RejectManager rejectMasterData={rejectItems} rejectLogs={rejectLogs} onProcessReject={(log) => setRejectLogs(prev => [log, ...prev])} onUpdateRejectLog={(log) => setRejectLogs(prev => prev.map(l => l.id === log.id ? log : l))} onDeleteRejectLog={(id) => setRejectLogs(prev => prev.filter(l => l.id !== id))} onUpdateRejectMaster={setRejectItems} userRole={currentUser.role} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} />}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
             {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser.role} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
@@ -344,7 +283,6 @@ const App: React.FC = () => {
                     onAddUser={(u) => setUsers(prev => [...prev, u])} 
                     onUpdateUser={(u) => setUsers(prev => prev.map(usr => usr.id === u.id ? u : usr))} 
                     onDeleteUser={(id) => setUsers(prev => prev.filter(u => u.id !== id))} 
-                    onFullSyncToSheets={handleFullSync}
                 />
             )}
         </div>
