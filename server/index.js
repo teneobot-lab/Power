@@ -23,7 +23,11 @@ const dbConfig = {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'smartstock_db',
-    dateStrings: true
+    dateStrings: true,
+    connectTimeout: 10000,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 };
 
 let pool;
@@ -34,9 +38,13 @@ let dbConnected = false;
 // =======================
 async function initDb() {
     try {
+        console.log('🔄 Menghubungkan ke MySQL...');
         pool = mysql.createPool(dbConfig);
+        
+        // Tes kueri nyata ke database
         const conn = await pool.getConnection();
-        console.log('✅ DATABASE CONNECTED');
+        await conn.query('SELECT 1'); 
+        console.log('✅ DATABASE MYSQL TERKONEKSI SEMPURNA');
         dbConnected = true;
 
         const ADMIN_HASH = crypto
@@ -46,7 +54,7 @@ async function initDb() {
 
         const [rows] = await conn.query("SELECT id FROM users WHERE username = 'admin'");
         if (rows.length === 0) {
-            console.log('⚠️ Creating default admin...');
+            console.log('⚠️ Membuat user admin default...');
             await conn.query(
                 `INSERT INTO users (id, name, username, password, role, status, last_login)
                  VALUES (?, ?, ?, ?, ?, ?, NOW())`,
@@ -55,9 +63,9 @@ async function initDb() {
         }
         conn.release();
     } catch (err) {
-        console.error('❌ DB ERROR:', err.message);
+        console.error('❌ DATABASE ERROR:', err.message);
         dbConnected = false;
-        // Retry connection
+        // Coba lagi dalam 5 detik jika gagal
         setTimeout(initDb, 5000);
     }
 }
@@ -78,49 +86,55 @@ const toCamel = (row) => {
     return res;
 };
 
-const checkDb = (req, res, next) => {
+// Middleware pengecekan DB sebelum rute dieksekusi
+const checkDb = async (req, res, next) => {
     if (!dbConnected || !pool) {
-        return res.status(503).json({ status: 'error', message: 'Database offline' });
+        return res.status(503).json({ 
+            status: 'error', 
+            message: 'Database MySQL sedang offline atau tidak dapat dijangkau.' 
+        });
     }
-    next();
+    try {
+        const conn = await pool.getConnection();
+        conn.release();
+        next();
+    } catch (e) {
+        dbConnected = false;
+        return res.status(503).json({ 
+            status: 'error', 
+            message: 'Koneksi database terputus: ' + e.message 
+        });
+    }
 };
 
 // =======================
-// ROUTES
+// ROUTES (Universal Pathing)
 // =======================
 
-// Status Check for Health
-const getStatus = () => ({
-    status: 'online',
-    database: dbConnected ? 'connected' : 'offline',
-    timestamp: new Date().toISOString()
-});
-
-app.get('/', (req, res) => res.json(getStatus()));
-app.get('/api', (req, res) => res.json(getStatus()));
-app.get('/api/health', (req, res) => res.json(getStatus()));
-
-app.post('/api/login', checkDb, async (req, res) => {
-    const { username, password } = req.body;
-    try {
-        const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
-        if (rows.length === 0) return res.status(401).json({ status: 'error', message: 'User tidak ditemukan' });
-        
-        const user = rows[0];
-        const dbPassword = user.password || '';
-        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
-
-        if (dbPassword === password || dbPassword === inputHash) {
-            await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
-            return res.json({ status: 'success', data: toCamel(user) });
+// Status Check (Deep Health)
+const getStatus = async () => {
+    let dbStatus = 'offline';
+    if (dbConnected && pool) {
+        try {
+            const conn = await pool.getConnection();
+            await conn.query('SELECT 1');
+            conn.release();
+            dbStatus = 'connected';
+        } catch (e) {
+            dbStatus = 'error';
         }
-        return res.status(401).json({ status: 'error', message: 'Password salah' });
-    } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Server error' });
     }
-});
+    return {
+        status: 'online',
+        database: dbStatus,
+        timestamp: new Date().toISOString()
+    };
+};
 
-app.get('/api/data', checkDb, async (req, res) => {
+app.get(['/', '/api', '/api/health', '/health'], async (req, res) => res.json(await getStatus()));
+
+// Fetch Data
+app.get(['/api/data', '/data'], checkDb, async (req, res) => {
     try {
         const [inventory] = await pool.query('SELECT * FROM inventory');
         const [transactions] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
@@ -141,13 +155,35 @@ app.get('/api/data', checkDb, async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ status: 'error', message: err.message });
+        res.status(500).json({ status: 'error', message: 'Gagal mengambil data: ' + err.message });
     }
 });
 
-app.post('/api/sync', checkDb, async (req, res) => {
+// Login
+app.post(['/api/login', '/login'], checkDb, async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
+        if (rows.length === 0) return res.status(401).json({ status: 'error', message: 'User tidak ditemukan' });
+        
+        const user = rows[0];
+        const dbPassword = user.password || '';
+        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
+
+        if (dbPassword === password || dbPassword === inputHash) {
+            await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
+            return res.json({ status: 'success', data: toCamel(user) });
+        }
+        return res.status(401).json({ status: 'error', message: 'Username atau Password salah' });
+    } catch (err) {
+        res.status(500).json({ status: 'error', message: 'Gagal login: ' + err.message });
+    }
+});
+
+// Universal Sync (The Core Fix)
+app.post(['/api/sync', '/sync'], checkDb, async (req, res) => {
     const { type, data } = req.body;
-    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing type or data' });
+    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Data atau Tipe sinkronisasi tidak lengkap' });
 
     const conn = await pool.getConnection();
     try {
@@ -210,18 +246,18 @@ app.post('/api/sync', checkDb, async (req, res) => {
         }
 
         await conn.commit();
-        res.json({ status: 'success', message: `Data ${type} synced successfully` });
+        res.json({ status: 'success', message: `Sync ${type} berhasil ke MySQL` });
     } catch (err) {
         await conn.rollback();
-        console.error('SYNC ERROR:', err);
-        res.status(500).json({ status: 'error', message: err.message });
+        console.error('SYNC FAILED:', err);
+        res.status(500).json({ status: 'error', message: 'Gagal Sinkronisasi: ' + err.message });
     } finally {
         conn.release();
     }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
+    console.log(`🚀 SERVER POWER INVENTORY AKTIF DI PORT ${PORT}`);
 });
 
 initDb();

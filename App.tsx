@@ -75,7 +75,7 @@ const App: React.FC = () => {
     const activeSettings = customSettings || loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
     const vpsUrl = activeSettings.vpsApiUrl;
     
-    // 1. Selalu load data lokal terlebih dahulu sebagai fallback
+    // Fallback load lokal
     if (!customSettings) {
         setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
         setTransactions(loadFromStorage('smartstock_transactions', []));
@@ -86,13 +86,12 @@ const App: React.FC = () => {
         setSettings(activeSettings);
     }
 
-    // 2. Cek koneksi ke VPS
     if (vpsUrl && vpsUrl !== '') {
       try {
         const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
         
-        // Cloud Connected means server is online AND database is connected
+        // Benar-benar cloud jika server ONLINE dan DB CONNECTED
         const online = conn.online && conn.dbStatus === 'CONNECTED';
         setIsCloudConnected(online);
 
@@ -105,13 +104,12 @@ const App: React.FC = () => {
             if (cloudData.reject_inventory) setRejectItems(cloudData.reject_inventory);
             if (cloudData.rejects) setRejectLogs(cloudData.rejects);
             if (cloudData.suppliers) setSuppliers(cloudData.suppliers);
-            showToast('Data Cloud berhasil dimuat', 'success');
+            showToast('Data Cloud Berhasil Dimuat', 'success');
           }
         } else if (conn.online && conn.dbStatus === 'DISCONNECTED') {
-            showToast('Server Online, tapi Database MySQL Putus.', 'warning');
+            showToast('Server Backend Online, tapi Database MySQL Terputus!', 'error');
         }
       } catch (error) {
-        console.error("Connection check failed:", error);
         setIsCloudConnected(false);
         setDbStatus('DISCONNECTED');
       }
@@ -154,9 +152,12 @@ const App: React.FC = () => {
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && dbStatus === 'CONNECTED') {
+    if (isMounted.current && isCloudConnected && dbStatus === 'CONNECTED') {
       setIsSaving(true);
-      await syncBackendData(settings.vpsApiUrl, type as any, data);
+      const res = await syncBackendData(settings.vpsApiUrl, type as any, data);
+      if (!res.success) {
+          showToast(`Gagal Sinkronisasi ${type}: ${res.message}`, 'error');
+      }
       setIsSaving(false);
     }
   };
@@ -319,8 +320,8 @@ const App: React.FC = () => {
                 <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm">Warehouse Management System</p></div>
             </div>
             <div className="flex items-center gap-3">
-                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                    {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
+                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' : (dbStatus === 'DISCONNECTED' ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200')}`}>
+                    {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : (dbStatus === 'DISCONNECTED' ? <AlertCircle className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />)}
                     {isCloudConnected ? 'Cloud Active' : (dbStatus === 'DISCONNECTED' ? 'MySQL Offline' : 'Local Mode')}
                 </div>
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
