@@ -35,6 +35,35 @@ let dbConnected = false;
 let lastDbError = null;
 
 // =======================
+// UTILS
+// =======================
+const toCamel = (row) => {
+    const res = {};
+    for (let key in row) {
+        const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
+        let val = row[key];
+        if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+            try { val = JSON.parse(val); } catch {}
+        }
+        res[camel] = val;
+    }
+    return res;
+};
+
+/**
+ * Konversi ISO String (JS) ke MySQL Datetime Format
+ * Contoh: '2026-01-17T11:32:55.165Z' -> '2026-01-17 11:32:55'
+ */
+const toMysqlDate = (isoString) => {
+    if (!isoString) return null;
+    try {
+        return isoString.replace('T', ' ').split('.')[0].replace('Z', '');
+    } catch (e) {
+        return isoString; // Fallback jika bukan format ISO
+    }
+};
+
+// =======================
 // INIT DATABASE
 // =======================
 async function initDb() {
@@ -42,7 +71,6 @@ async function initDb() {
         console.log('🔄 Mencoba koneksi ke database MySQL...');
         pool = mysql.createPool(dbConfig);
         
-        // Tes kueri nyata
         const conn = await pool.getConnection();
         await conn.query('SELECT 1'); 
         console.log('✅ DATABASE MYSQL TERKONEKSI SEMPURNA');
@@ -68,12 +96,10 @@ async function initDb() {
         dbConnected = false;
         lastDbError = err.message;
         console.error('❌ DATABASE ERROR:', err.message);
-        // Retry otomatis
         setTimeout(initDb, 5000);
     }
 }
 
-// Middleware proteksi Database
 const checkDb = async (req, res, next) => {
     if (!dbConnected || !pool) {
         return res.status(503).json({ 
@@ -96,14 +122,12 @@ const checkDb = async (req, res, next) => {
 };
 
 // =======================
-// ROUTES (Universal Pathing)
+// ROUTES
 // =======================
 
-// Status Check (Deep Health)
 app.get(['/', '/api', '/api/health', '/health'], async (req, res) => {
     let dbStatus = 'offline';
     let dbMessage = lastDbError;
-    
     if (dbConnected && pool) {
         try {
             const conn = await pool.getConnection();
@@ -116,7 +140,6 @@ app.get(['/', '/api', '/api/health', '/health'], async (req, res) => {
             dbMessage = e.message;
         }
     }
-
     res.json({
         status: 'online',
         database: dbStatus,
@@ -146,7 +169,7 @@ app.get(['/api/data', '/data'], checkDb, async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Gagal Fetch: ' + err.message });
+        res.status(500).json({ status: 'error', message: 'Gagal mengambil data: ' + err.message });
     }
 });
 
@@ -172,66 +195,86 @@ app.post(['/api/login', '/login'], checkDb, async (req, res) => {
 
 app.post(['/api/sync', '/sync'], checkDb, async (req, res) => {
     const { type, data } = req.body;
-    if (!type || !data) return res.status(400).json({ status: 'error', message: 'Data sync tidak lengkap' });
+    if (!type || !data || !Array.isArray(data)) {
+        return res.status(400).json({ status: 'error', message: 'Data sync tidak valid atau bukan array' });
+    }
 
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
 
-        const tables = {
-            inventory: 'inventory',
-            transactions: 'transactions',
-            reject_inventory: 'reject_inventory',
-            rejects: 'rejects',
-            suppliers: 'suppliers',
-            users: 'users'
-        };
-
-        if (tables[type]) {
-            await conn.query(`DELETE FROM ${tables[type]}`);
+        if (type === 'inventory') {
+            await conn.query('DELETE FROM inventory');
             for (const item of data) {
-                if (type === 'inventory') {
-                    await conn.query(
-                        `INSERT INTO inventory (id, sku, name, category, quantity, base_unit, alternative_units, min_level, unit_price, location, last_updated, status)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [item.id, item.sku, item.name, item.category, item.quantity, item.baseUnit, JSON.stringify(item.alternativeUnits || []), item.minLevel, item.unitPrice, item.location, item.lastUpdated, item.status || 'active']
-                    );
-                } else if (type === 'transactions') {
-                    await conn.query(
-                        `INSERT INTO transactions (id, date, type, items, notes, timestamp, supplier_name, po_number, ri_number, photos)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                        [tx.id, tx.date, tx.type, JSON.stringify(tx.items), tx.notes, tx.timestamp, tx.supplierName, tx.poNumber, tx.riNumber, JSON.stringify(tx.photos || [])]
-                    );
-                }
-                // ... (tambah logika tabel lain sesuai skema)
+                await conn.query(
+                    `INSERT INTO inventory (id, sku, name, category, quantity, base_unit, alternative_units, min_level, unit_price, location, last_updated, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [item.id, item.sku, item.name, item.category, item.quantity, item.baseUnit, JSON.stringify(item.alternativeUnits || []), item.minLevel, item.unitPrice, item.location, toMysqlDate(item.lastUpdated), item.status || 'active']
+                );
+            }
+        } else if (type === 'transactions') {
+            await conn.query('DELETE FROM transactions');
+            for (const item of data) {
+                await conn.query(
+                    `INSERT INTO transactions (id, date, type, items, notes, timestamp, supplier_name, po_number, ri_number, photos)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [item.id, item.date, item.type, JSON.stringify(item.items), item.notes, toMysqlDate(item.timestamp), item.supplierName, item.poNumber, item.riNumber, JSON.stringify(item.photos || [])]
+                );
+            }
+        } else if (type === 'reject_inventory') {
+            await conn.query('DELETE FROM reject_inventory');
+            for (const item of data) {
+                await conn.query(
+                    `INSERT INTO reject_inventory (id, sku, name, base_unit, unit2, ratio2, unit3, ratio3, last_updated)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [item.id, item.sku, item.name, item.baseUnit, item.unit2, item.ratio2, item.unit3, item.ratio3, toMysqlDate(item.lastUpdated)]
+                );
+            }
+        } else if (type === 'rejects') {
+            await conn.query('DELETE FROM rejects');
+            for (const item of data) {
+                await conn.query(
+                    `INSERT INTO rejects (id, date, items, notes, timestamp)
+                     VALUES (?, ?, ?, ?, ?)`,
+                    [item.id, item.date, JSON.stringify(item.items), item.notes, toMysqlDate(item.timestamp)]
+                );
+            }
+        } else if (type === 'suppliers') {
+            await conn.query('DELETE FROM suppliers');
+            for (const item of data) {
+                await conn.query(
+                    `INSERT INTO suppliers (id, name, contact_person, email, phone, address)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [item.id, item.name, item.contactPerson, item.email, item.phone, item.address]
+                );
+            }
+        } else if (type === 'users') {
+            await conn.query('DELETE FROM users');
+            for (const item of data) {
+                await conn.query(
+                    `INSERT INTO users (id, name, username, password, role, status, last_login)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    [item.id, item.name, item.username, item.password, item.role, item.status, toMysqlDate(item.lastLogin)]
+                );
             }
         }
 
         await conn.commit();
-        res.json({ status: 'success', message: `Sync ${type} Berhasil` });
+        res.json({ status: 'success', message: `Sinkronisasi ${type} ke MySQL berhasil` });
     } catch (err) {
         await conn.rollback();
-        res.status(500).json({ status: 'error', message: 'Sync Gagal: ' + err.message });
+        console.error(`❌ Sync ${type} Gagal:`, err.message);
+        res.status(500).json({ 
+            status: 'error', 
+            message: `Gagal Sinkronisasi ${type}: ${err.message}` 
+        });
     } finally {
         conn.release();
     }
 });
 
-const toCamel = (row) => {
-    const res = {};
-    for (let key in row) {
-        const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-        let val = row[key];
-        if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
-            try { val = JSON.parse(val); } catch {}
-        }
-        res[camel] = val;
-    }
-    return res;
-};
-
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
+    console.log(`🚀 SERVER POWER INVENTORY RUNNING ON PORT ${PORT}`);
 });
 
 initDb();
