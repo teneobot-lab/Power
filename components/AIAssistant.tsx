@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { InventoryItem, ChatMessage } from '../types';
 import { chatWithInventoryBot, getInventoryInsights } from '../services/geminiService';
@@ -13,7 +14,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     {
       id: '1',
       role: 'model',
-      text: 'Establishing secure link to Gemini Core... System ready. I am your SmartStock Agent. How can I assist with your supply chain nodes today?',
+      text: 'Hello! I am your SmartStock Agent. I can help you check inventory levels, write emails to suppliers, calculate business metrics, or answer general questions. How can I assist you today?',
       timestamp: new Date()
     }
   ]);
@@ -43,6 +44,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
     setInputValue('');
     setIsLoading(true);
 
+    // Using refactored service that relies on process.env.API_KEY
     const responseText = await chatWithInventoryBot(inputValue, items);
 
     const modelMsg: ChatMessage = {
@@ -59,14 +61,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
   const handleGenerateReport = async () => {
     if (isLoading) return;
     
+    // Add a ghost message for the user action
     setMessages(prev => [...prev, {
       id: Date.now().toString(),
       role: 'user',
-      text: "Synthesize full inventory pattern analysis and generate core insights report.",
+      text: "Analyze my inventory patterns and give me a report.",
       timestamp: new Date()
     }]);
     
     setIsLoading(true);
+    // Using refactored service that relies on process.env.API_KEY
     const report = await getInventoryInsights(items);
     
     setMessages(prev => [...prev, {
@@ -79,47 +83,47 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
   };
 
   return (
-    <div className="h-full flex flex-col glass-panel rounded-[2.5rem] overflow-hidden border border-white/5">
+    <div className="h-full flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       {/* Header */}
-      <div className="p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02] flex-shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="bg-[#6D5DF6]/20 p-3 rounded-2xl border border-[#6D5DF6]/30">
-            <Sparkles className="w-5 h-5 text-[#6D5DF6]" />
+      <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="bg-blue-100 p-2 rounded-lg">
+            <Sparkles className="w-5 h-5 text-blue-600" />
           </div>
           <div>
-            <h3 className="text-lg font-black text-white tracking-tighter uppercase font-manrope">Gemini Core</h3>
-            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] mt-1">Advanced Neural Analysis</p>
+            <h3 className="font-semibold text-slate-800">Smart Agent</h3>
+            <p className="text-xs text-slate-500">Inventory Context & General AI</p>
           </div>
         </div>
         <button 
           onClick={handleGenerateReport}
           disabled={isLoading}
-          className="flex items-center gap-2 px-6 py-2.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all disabled:opacity-30"
+          className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300 text-slate-700 text-xs font-medium rounded-lg transition-all shadow-sm disabled:opacity-50"
         >
-          <BarChart2 className="w-4 h-4 text-[#22D3EE]" />
-          Generate Report
+          <BarChart2 className="w-3.5 h-3.5" />
+          Generate Insight Report
         </button>
       </div>
       
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30 custom-scrollbar">
         {messages.map((msg) => (
           <div 
             key={msg.id} 
-            className={`flex gap-5 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+            className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
           >
             <div className={`
-              w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0
-              ${msg.role === 'user' ? 'bg-[#6D5DF6] text-white shadow-lg' : 'bg-[#0F172A] border border-white/10 text-[#22D3EE]'}
+              w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0
+              ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-emerald-600 text-white'}
             `}>
-              {msg.role === 'user' ? <User size={20} /> : <Bot size={20} />}
+              {msg.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
             </div>
             
             <div className={`
-              max-w-[75%] rounded-[1.5rem] px-6 py-4 text-[13px] font-medium leading-relaxed
+              max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm
               ${msg.role === 'user' 
-                ? 'bg-[#6D5DF6] text-white rounded-tr-none' 
-                : 'bg-white/5 text-slate-300 border border-white/5 rounded-tl-none prose prose-invert prose-sm max-w-none'}
+                ? 'bg-blue-600 text-white rounded-tr-none' 
+                : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none prose prose-sm prose-slate max-w-none'}
             `}>
                {msg.role === 'model' ? (
                  <ReactMarkdown>{msg.text}</ReactMarkdown>
@@ -130,13 +134,13 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
           </div>
         ))}
         {isLoading && (
-          <div className="flex gap-5">
-             <div className="w-10 h-10 rounded-2xl bg-[#0F172A] border border-white/10 text-[#22D3EE] flex items-center justify-center flex-shrink-0">
-               <Bot size={20} />
+          <div className="flex gap-3">
+             <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
+               <Bot className="w-4 h-4" />
              </div>
-             <div className="bg-white/5 border border-white/5 px-6 py-4 rounded-[1.5rem] rounded-tl-none flex items-center gap-4">
-                <Loader2 className="w-4 h-4 animate-spin text-[#22D3EE]" />
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Processing Data...</span>
+             <div className="bg-white border border-slate-200 px-4 py-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-400" />
+                <span className="text-xs text-slate-500">Thinking...</span>
              </div>
           </div>
         )}
@@ -144,25 +148,25 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ items }) => {
       </div>
 
       {/* Input Area */}
-      <div className="p-8 bg-white/[0.02] border-t border-white/5 flex-shrink-0">
+      <div className="p-4 bg-white border-t border-slate-100 flex-shrink-0">
         <form 
           onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-          className="flex items-center gap-4"
+          className="flex items-center gap-2"
         >
           <input
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Query terminal..."
-            className="flex-1 px-8 py-5 bg-white/5 border border-white/10 rounded-[1.5rem] focus:ring-2 focus:ring-[#6D5DF6]/50 outline-none text-sm transition-all font-medium placeholder:text-slate-700"
+            placeholder="Ask about inventory, write an email, or general questions..."
+            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none text-sm transition-all"
             disabled={isLoading}
           />
           <button 
             type="submit" 
             disabled={!inputValue.trim() || isLoading}
-            className="p-5 bg-[#6D5DF6] text-white rounded-2xl hover:bg-[#5B4EDB] disabled:opacity-30 transition-all shadow-xl shadow-indigo-500/10"
+            className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
           >
-            <Send size={20} />
+            <Send className="w-4 h-4" />
           </button>
         </form>
       </div>
