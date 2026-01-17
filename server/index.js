@@ -57,6 +57,7 @@ async function initDb() {
     } catch (err) {
         console.error('❌ DB ERROR:', err.message);
         dbConnected = false;
+        // Retry connection
         setTimeout(initDb, 5000);
     }
 }
@@ -88,12 +89,16 @@ const checkDb = (req, res, next) => {
 // ROUTES
 // =======================
 
-app.get('/', (req, res) => {
-    res.json({
-        status: 'online',
-        database: dbConnected ? 'connected' : 'offline'
-    });
+// Status Check for Health
+const getStatus = () => ({
+    status: 'online',
+    database: dbConnected ? 'connected' : 'offline',
+    timestamp: new Date().toISOString()
 });
+
+app.get('/', (req, res) => res.json(getStatus()));
+app.get('/api', (req, res) => res.json(getStatus()));
+app.get('/api/health', (req, res) => res.json(getStatus()));
 
 app.post('/api/login', checkDb, async (req, res) => {
     const { username, password } = req.body;
@@ -140,9 +145,6 @@ app.get('/api/data', checkDb, async (req, res) => {
     }
 });
 
-// =======================
-// SYNC ROUTE (KEY FIX)
-// =======================
 app.post('/api/sync', checkDb, async (req, res) => {
     const { type, data } = req.body;
     if (!type || !data) return res.status(400).json({ status: 'error', message: 'Missing type or data' });
@@ -203,14 +205,6 @@ app.post('/api/sync', checkDb, async (req, res) => {
                     `INSERT INTO users (id, name, username, password, role, status, last_login)
                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
                     [u.id, u.name, u.username, u.password, u.role, u.status, u.lastLogin]
-                );
-            }
-        } else if (type === 'settings') {
-            // Settings logic per key
-            for (const [key, value] of Object.entries(data)) {
-                await conn.query(
-                    'INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?',
-                    [key, JSON.stringify(value), JSON.stringify(value)]
                 );
             }
         }

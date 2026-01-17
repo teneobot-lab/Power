@@ -19,8 +19,8 @@ interface FullState {
 
 export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
   try {
-    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
-    const url = baseUrl.includes('script.google.com') ? baseUrl : `${cleanBase}/api/data`;
+    const cleanBase = (baseUrl === '/' || baseUrl === '/api') ? '/api' : baseUrl.replace(/\/$/, '');
+    const url = baseUrl.includes('script.google.com') ? baseUrl : `${cleanBase}/data`;
 
     const response = await fetch(url, {
       method: 'GET',
@@ -29,11 +29,6 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
 
     if (response.status === 503) {
         console.warn("⚠️ Database is down (503), but server is alive.");
-        return null;
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (contentType && contentType.includes("text/html")) {
         return null;
     }
 
@@ -49,8 +44,8 @@ export const fetchBackendData = async (baseUrl: string): Promise<FullState | nul
 
 export const loginUser = async (baseUrl: string, username: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
     try {
-        const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
-        const url = `${cleanBase}/api/login`;
+        const cleanBase = (baseUrl === '/' || baseUrl === '/api') ? '/api' : baseUrl.replace(/\/$/, '');
+        const url = `${cleanBase}/login`;
 
         const response = await fetch(url, {
             method: 'POST',
@@ -72,15 +67,15 @@ export const loginUser = async (baseUrl: string, username: string, password: str
 
 export const syncBackendData = async (
   baseUrl: string, 
-  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 
+  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'reject_inventory' | 'rejects', 
   data: any
 ): Promise<{ success: boolean; message?: string }> => {
   if (!baseUrl) return { success: false, message: 'URL tujuan tidak ditemukan.' };
   
   try {
     const isGas = baseUrl.includes('script.google.com');
-    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
-    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
+    const cleanBase = (baseUrl === '/' || baseUrl === '/api') ? '/api' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/sync`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -89,7 +84,6 @@ export const syncBackendData = async (
     });
 
     if (!response.ok) {
-        if (response.status === 500) return { success: false, message: 'Server Error (500): Skrip GAS atau VPS mengalami kegagalan internal.' };
         return { success: false, message: `Server error: ${response.status} ${response.statusText}` };
     }
     
@@ -111,19 +105,33 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
 }> => {
   if (!baseUrl) return { online: false, message: 'URL tidak boleh kosong.' };
 
+  // Safety check for Mixed Content (HTTPS calling HTTP)
+  if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
+      return { 
+          online: false, 
+          message: 'Browser memblokir HTTP karena site ini HTTPS. Gunakan path "/api" (Proxy).' 
+      };
+  }
+
   try {
     const start = Date.now();
-    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const isGas = baseUrl.includes('script.google.com');
     
-    if (baseUrl.includes('script.google.com')) {
+    if (isGas) {
         return { online: true, message: 'Format URL Google Apps Script valid.', dbStatus: 'UNKNOWN', latency: Date.now() - start };
     }
-    
-    // Gunakan root path atau data path untuk cek hidup/matinya server
-    const url = `${cleanBase}/`; 
+
+    // Determine the health check URL
+    // If baseUrl is "/" or "/api", we want to check the server health endpoint via the proxy
+    let url = '';
+    if (baseUrl === '/' || baseUrl === '/api') {
+        url = '/api/health';
+    } else {
+        url = baseUrl.endsWith('/') ? `${baseUrl}api/health` : `${baseUrl}/api/health`;
+    }
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); 
+    const timeoutId = setTimeout(() => controller.abort(), 8000); 
 
     const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeoutId);
@@ -131,7 +139,7 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     const latency = Date.now() - start;
 
     if (response.status === 502 || response.status === 504) {
-        return { online: false, message: 'Gateway Error: VPS Port mungkin tertutup.' };
+        return { online: false, message: 'VPS Offline atau Port tertutup.' };
     }
     
     if (response.status === 503) {
@@ -139,7 +147,6 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     }
 
     if (response.ok) {
-        // Cek apakah server merespon JSON status online
         const data = await response.json().catch(() => null);
         if (data && data.status === 'online') {
             return { 
@@ -149,14 +156,14 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
                 latency 
             };
         }
-        return { online: true, message: 'Server merespon.', dbStatus: 'UNKNOWN', latency };
+        return { online: true, message: 'Server merespon (Path OK).', dbStatus: 'UNKNOWN', latency };
     } else {
         return { online: false, message: `Server error: ${response.status}` };
     }
   } catch (error: any) {
     return { 
       online: false, 
-      message: error.name === 'AbortError' ? 'Koneksi Timeout.' : 'Server tidak dapat dijangkau.' 
+      message: error.name === 'AbortError' ? 'Koneksi Timeout (Lambat).' : 'Server tidak dapat dijangkau.' 
     };
   }
 };

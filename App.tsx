@@ -91,9 +91,12 @@ const App: React.FC = () => {
       try {
         const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
-        setIsCloudConnected(conn.online);
+        
+        // Cloud Connected means server is online AND database is connected
+        const online = conn.online && conn.dbStatus === 'CONNECTED';
+        setIsCloudConnected(online);
 
-        if (conn.online && conn.dbStatus === 'CONNECTED') {
+        if (online) {
           const cloudData = await fetchBackendData(vpsUrl);
           if (cloudData) {
             if (cloudData.inventory) setItems(cloudData.inventory);
@@ -102,14 +105,19 @@ const App: React.FC = () => {
             if (cloudData.reject_inventory) setRejectItems(cloudData.reject_inventory);
             if (cloudData.rejects) setRejectLogs(cloudData.rejects);
             if (cloudData.suppliers) setSuppliers(cloudData.suppliers);
+            showToast('Data Cloud berhasil dimuat', 'success');
           }
+        } else if (conn.online && conn.dbStatus === 'DISCONNECTED') {
+            showToast('Server Online, tapi Database MySQL Putus.', 'warning');
         }
       } catch (error) {
         console.error("Connection check failed:", error);
         setIsCloudConnected(false);
+        setDbStatus('DISCONNECTED');
       }
     } else {
       setIsCloudConnected(false);
+      setDbStatus('UNKNOWN');
     }
     setIsLoading(false);
   }, [showToast]);
@@ -146,7 +154,6 @@ const App: React.FC = () => {
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
   const syncToCloud = async (type: string, data: any) => {
-    // FIX: Izinkan sync jika vpsApiUrl adalah '/' (Proxy)
     if (isMounted.current && isCloudConnected && settings.vpsApiUrl && dbStatus === 'CONNECTED') {
       setIsSaving(true);
       await syncBackendData(settings.vpsApiUrl, type as any, data);
@@ -314,7 +321,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
                 <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
                     {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
-                    {isCloudConnected ? 'Cloud Active' : 'Local Mode'}
+                    {isCloudConnected ? 'Cloud Active' : (dbStatus === 'DISCONNECTED' ? 'MySQL Offline' : 'Local Mode')}
                 </div>
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
                 <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full transition-transform active:rotate-180 duration-500"><RefreshCw className="w-5 h-5" /></button>
