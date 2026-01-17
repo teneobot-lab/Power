@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from './types';
-import { generateId } from './utils/storageUtils';
+import { generateId, saveToStorage, loadFromStorage } from './utils/storageUtils';
 import { checkServerConnection } from './services/api';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, Trash2, Edit2 } from 'lucide-react';
+import { hashPassword } from './utils/security';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, FileJson, FileText, ChevronRight, Play, Trash2, Edit2, Wrench, Download, Upload, RotateCcw } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -19,7 +20,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   settings, onUpdateSettings, 
   users, onAddUser, onUpdateUser, onDeleteUser, onFullSyncToSheets
 }) => {
-  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'cloud'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'cloud' | 'migration'>('settings');
   const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -29,6 +30,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
   const [connectionMsg, setConnectionMsg] = useState('');
+
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setTempSettings(settings); }, [settings]);
 
@@ -55,12 +58,63 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (!onFullSyncToSheets) return;
       setIsSyncing(true);
       try {
-          await onFullSyncToSheets();
+          const success = await onFullSyncToSheets();
+          if (success) {
+            setTempSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
+          }
       } catch (e) {
           console.error("Sync error:", e);
       } finally {
           setIsSyncing(false);
       }
+  };
+
+  // --- MIGRATION HANDLERS ---
+  const exportAllData = () => {
+    const data = {
+      inventory: loadFromStorage('smartstock_inventory', []),
+      transactions: loadFromStorage('smartstock_transactions', []),
+      reject_inventory: loadFromStorage('smartstock_reject_inventory', []),
+      rejects: loadFromStorage('smartstock_rejects', []),
+      suppliers: loadFromStorage('smartstock_suppliers', []),
+      users: loadFromStorage('smartstock_users', []),
+      settings: loadFromStorage('smartstock_settings', {})
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SmartStock_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.click();
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target?.result as string);
+        if (confirm("Import data akan menimpa data lokal saat ini. Lanjutkan?")) {
+            if (data.inventory) saveToStorage('smartstock_inventory', data.inventory);
+            if (data.transactions) saveToStorage('smartstock_transactions', data.transactions);
+            if (data.settings) saveToStorage('smartstock_settings', data.settings);
+            alert("Data berhasil diimpor. Silakan refresh halaman.");
+            window.location.reload();
+        }
+      } catch (err) {
+        alert("Gagal membaca file backup.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const resetLocalCache = () => {
+    if (confirm("Hapus seluruh cache data lokal di browser? Anda akan keluar otomatis.")) {
+        localStorage.clear();
+        sessionStorage.clear();
+        window.location.reload();
+    }
   };
 
   return (
@@ -69,14 +123,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* Navigation Sidebar */}
         <div className="w-full md:w-64 flex flex-col gap-2 flex-shrink-0">
           <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-            <Database className="w-4 h-4" /> 
+            <Globe className="w-4 h-4" /> 
             <span>Pengaturan Server</span>
           </button>
           <button onClick={() => setActiveTab('cloud')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'cloud' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
             <FileSpreadsheet className="w-4 h-4" /> 
             <span>Integrasi Sheets</span>
           </button>
-          <button onClick={() => setActiveTab('users')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
+          <button onClick={() => setActiveTab('migration')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'migration' ? 'bg-amber-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
+            <Wrench className="w-4 h-4" /> 
+            <span>Setup & Migrasi</span>
+          </button>
+          <button onClick={() => setActiveTab('users')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
             <Shield className="w-4 h-4" /> 
             <span>Manajemen Akses</span>
           </button>
@@ -87,10 +145,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           {activeTab === 'settings' && (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                <h2 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-3">
-                 <Globe className="w-6 h-6 text-blue-500" /> 
+                 <Database className="w-6 h-6 text-blue-500" /> 
                  VPS Configuration
                </h2>
-               <p className="text-slate-500 text-sm mb-8">Konfigurasi endpoint API untuk database MySQL.</p>
+               <p className="text-slate-500 text-sm mb-8 italic">Pastikan VPS Anda sudah menjalankan API Backend sebelum mengetes koneksi.</p>
                <div className="space-y-6">
                   <div>
                     <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend API URL</label>
@@ -116,9 +174,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                   <div className="pt-6 border-t flex items-center gap-4">
                      <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95">
-                        <Save className="w-4 h-4" /> Simpan
+                        <Save className="w-4 h-4" /> Simpan Pengaturan
                      </button>
-                     {isSaved && activeTab === 'settings' && <span className="text-emerald-600 text-sm font-bold animate-pulse"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
+                     {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
                   </div>
                </div>
             </div>
@@ -130,9 +188,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <FileSpreadsheet className="w-7 h-7 text-emerald-600" /> 
                  Integrasi Google Sheets
                </h2>
-               <p className="text-slate-500 text-sm mb-8">Gunakan Google Apps Script untuk sinkronisasi data ke Spreadsheet.</p>
+               <p className="text-slate-500 text-sm mb-8">Sinkronisasi seluruh database ke Spreadsheet menggunakan Google Apps Script.</p>
                <div className="space-y-8">
-                  <div className="p-5 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
                     <div>
                         <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">GAS Web App URL</label>
                         <div className="flex flex-col sm:flex-row gap-3">
@@ -155,39 +213,79 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             {connectionMsg}
                         </div>
                     )}
-                    <div className="pt-2 border-t flex items-center gap-4">
-                        <button onClick={handleSaveSettings} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
-                            Simpan URL
-                        </button>
-                    </div>
+                    <button onClick={handleSaveSettings} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
+                        Simpan URL
+                    </button>
                   </div>
 
-                  <div className="p-6 bg-emerald-50/50 rounded-2xl border border-emerald-100">
-                    <div className="flex items-start gap-4">
-                        <div className="p-3 bg-white rounded-xl shadow-sm border border-emerald-100">
-                            <RefreshCw className={`w-6 h-6 text-emerald-600 ${isSyncing ? 'animate-spin' : ''}`} />
-                        </div>
-                        <div className="flex-1">
-                            <h4 className="font-bold text-slate-800">Sinkronisasi Penuh</h4>
-                            <p className="text-xs text-slate-500 mt-1">Kirim seluruh data lokal dan VPS ke Spreadsheet sekarang.</p>
-                            <div className="mt-6 flex items-center gap-4">
-                                <button 
-                                    onClick={handleManualSync}
-                                    disabled={isSyncing || !tempSettings.viteGasUrl.includes('script.google.com')}
-                                    className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2"
-                                >
-                                    {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                                    Sync Sekarang
-                                </button>
-                                {tempSettings.lastSheetSync && (
-                                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                                        <Clock className="w-3 h-3" />
-                                        Terakhir: {new Date(tempSettings.lastSheetSync).toLocaleString('id-ID')}
-                                    </div>
-                                )}
+                  <div className="p-8 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex-1">
+                        <h4 className="font-bold text-emerald-800 text-lg flex items-center gap-2">
+                            <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} /> 
+                            Sinkronisasi Manual
+                        </h4>
+                        <p className="text-sm text-emerald-600 mt-1 italic">Kirim seluruh data (Inventory, Transaksi, Users) ke Google Sheets sekarang.</p>
+                        {tempSettings.lastSheetSync && (
+                            <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-emerald-700/60 uppercase">
+                                <Clock className="w-3 h-3" />
+                                Terakhir Sync: {new Date(tempSettings.lastSheetSync).toLocaleString('id-ID')}
                             </div>
-                        </div>
+                        )}
                     </div>
+                    <button 
+                        onClick={handleManualSync}
+                        disabled={isSyncing || !tempSettings.viteGasUrl.includes('script.google.com')}
+                        className="px-10 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-2xl text-sm font-black shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center gap-3"
+                    >
+                        {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
+                        SYNC KE SPREADSHEETS
+                    </button>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'migration' && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+               <h2 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-3">
+                 <Wrench className="w-6 h-6 text-amber-500" /> 
+                 Setup & Migrasi Data
+               </h2>
+               <p className="text-slate-500 text-sm mb-8 italic">Kelola backup data lokal dan inisialisasi aplikasi.</p>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
+                      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+                          <Download className="w-6 h-6" />
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-slate-800">Ekspor Backup</h4>
+                          <p className="text-xs text-slate-500 mt-1">Unduh seluruh data lokal dalam format JSON.</p>
+                      </div>
+                      <button onClick={exportAllData} className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Unduh JSON</button>
+                  </div>
+
+                  <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
+                      <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                          <Upload className="w-6 h-6" />
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-slate-800">Impor Backup</h4>
+                          <p className="text-xs text-slate-500 mt-1">Pulihkan data dari file JSON backup sebelumnya.</p>
+                      </div>
+                      <input type="file" ref={importFileRef} className="hidden" accept=".json" onChange={handleImport} />
+                      <button onClick={() => importFileRef.current?.click()} className="w-full py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">Pilih File</button>
+                  </div>
+
+                  <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col items-center text-center space-y-4 md:col-span-2">
+                      <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
+                          <RotateCcw className="w-6 h-6" />
+                      </div>
+                      <div>
+                          <h4 className="font-bold text-rose-800">Reset Total Browser</h4>
+                          <p className="text-xs text-rose-600 mt-1">Gunakan ini jika aplikasi error atau ingin membersihkan seluruh data (Local Storage).</p>
+                      </div>
+                      <button onClick={resetLocalCache} className="px-8 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-lg shadow-rose-100">Reset Semua Cache</button>
                   </div>
                </div>
             </div>
@@ -197,7 +295,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
                <div className="flex justify-between items-center mb-6">
                    <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2"><Shield className="w-6 h-6 text-indigo-500" /> Manajemen Akses</h2>
-                   <button onClick={() => { setEditingUser(null); setUserFormData({}); setIsUserModalOpen(true); }} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700">Tambah User</button>
+                   <button onClick={() => { setEditingUser(null); setUserFormData({}); setIsUserModalOpen(true); }} className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700">Tambah User</button>
                </div>
                <div className="overflow-hidden border border-slate-100 rounded-xl">
                    <table className="w-full text-left">
@@ -217,7 +315,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                            <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{user.status}</span></td>
                            <td className="px-6 py-4 text-right">
                              <div className="flex justify-end gap-2">
-                               <button onClick={() => { setEditingUser(user); setUserFormData(user); setIsUserModalOpen(true); }} className="text-slate-400 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button>
+                               <button onClick={() => { setEditingUser(user); setUserFormData({ ...user, password: '' }); setIsUserModalOpen(true); }} className="text-slate-400 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button>
                                <button onClick={() => onDeleteUser(user.id)} className="text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
                              </div>
                            </td>
@@ -233,28 +331,40 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       
       {/* User Modal */}
       {isUserModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
             <div className="px-8 py-6 border-b flex justify-between items-center bg-slate-50/50">
                <h3 className="font-black text-slate-800 uppercase tracking-tight">{editingUser ? 'Edit User' : 'Tambah User'}</h3>
                <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-white rounded-full"><X className="w-5 h-5 text-slate-400" /></button>
             </div>
-            <form onSubmit={(e) => {
+            <form onSubmit={async (e) => {
                  e.preventDefault();
+                 let finalPassword = userFormData.password;
+                 if (userFormData.password && userFormData.password.trim() !== '') {
+                    finalPassword = await hashPassword(userFormData.password);
+                 } else if (editingUser) {
+                    finalPassword = editingUser.password;
+                 } else {
+                    finalPassword = await hashPassword('123456');
+                 }
+
                  const newUser: User = { 
                      id: editingUser ? editingUser.id : generateId(), 
                      name: userFormData.name || '', 
                      username: userFormData.username || '', 
                      role: (userFormData.role as UserRole) || 'staff', 
                      status: (userFormData.status as 'active' | 'inactive') || 'active', 
-                     password: userFormData.password || (editingUser ? editingUser.password : 'admin22')
+                     password: finalPassword
                  };
                  if (editingUser) onUpdateUser(newUser); else onAddUser(newUser);
                  setIsUserModalOpen(false);
             }} className="p-8 space-y-5">
                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.name || ''} onChange={e => setUserFormData({...userFormData, name: e.target.value})} /></div>
                <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Username</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.username || ''} onChange={e => setUserFormData({...userFormData, username: e.target.value})} /></div>
-               <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Password</label><input type="password" className="w-full px-4 py-2 border rounded-xl text-sm" placeholder={editingUser ? "Kosongkan jika tidak diubah" : "Wajib diisi"} value={userFormData.password || ''} onChange={e => setUserFormData({...userFormData, password: e.target.value})} /></div>
+               <div>
+                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Password {editingUser ? '(Kosongkan jika tidak diubah)' : ''}</label>
+                   <input type="password" className="w-full px-4 py-2 border rounded-xl text-sm" placeholder={editingUser ? "••••••••" : "Wajib diisi"} value={userFormData.password || ''} onChange={e => setUserFormData({...userFormData, password: e.target.value})} required={!editingUser} />
+               </div>
                <div className="grid grid-cols-2 gap-4">
                   <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Role</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.role || 'staff'} onChange={e => setUserFormData({...userFormData, role: e.target.value as UserRole})}><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
                   <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.status || 'active'} onChange={e => setUserFormData({...userFormData, status: e.target.value as any})}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
