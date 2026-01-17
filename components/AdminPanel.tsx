@@ -33,7 +33,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const importFileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setTempSettings(settings); }, [settings]);
+  // Sinkronisasi ulang jika props settings berubah
+  useEffect(() => { 
+    setTempSettings(prev => ({
+        ...prev,
+        ...settings,
+        viteGasUrl: settings.viteGasUrl || '' // Pastikan tidak undefined
+    })); 
+  }, [settings]);
 
   const handleSaveSettings = () => {
     onUpdateSettings(tempSettings);
@@ -69,7 +76,6 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       }
   };
 
-  // --- MIGRATION HANDLERS ---
   const exportAllData = () => {
     const data = {
       inventory: loadFromStorage('smartstock_inventory', []),
@@ -98,12 +104,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         if (confirm("Import data akan menimpa data lokal saat ini. Lanjutkan?")) {
             if (data.inventory) saveToStorage('smartstock_inventory', data.inventory);
             if (data.transactions) saveToStorage('smartstock_transactions', data.transactions);
-            if (data.reject_inventory) saveToStorage('smartstock_reject_inventory', data.reject_inventory);
-            if (data.rejects) saveToStorage('smartstock_rejects', data.rejects);
-            if (data.suppliers) saveToStorage('smartstock_suppliers', data.suppliers);
-            if (data.users) saveToStorage('smartstock_users', data.users);
             if (data.settings) saveToStorage('smartstock_settings', data.settings);
-            alert("Data berhasil diimpor. Aplikasi akan memuat ulang.");
+            alert("Data berhasil diimpor. Silakan refresh halaman.");
             window.location.reload();
         }
       } catch (err) {
@@ -114,12 +116,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const resetLocalCache = () => {
-    if (confirm("⚠️ PERINGATAN: Hapus seluruh cache data lokal di browser? Anda akan logout secara otomatis.")) {
+    if (confirm("Hapus seluruh cache data lokal di browser? Anda akan keluar otomatis.")) {
         localStorage.clear();
         sessionStorage.clear();
         window.location.reload();
     }
   };
+
+  // Helper aman untuk cek includes pada URL yang mungkin undefined
+  const isGasUrlValid = (url?: string) => (url || '').includes('script.google.com');
 
   return (
     <div className="space-y-6 animate-fade-in flex flex-col h-full overflow-hidden">
@@ -152,7 +157,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <Database className="w-6 h-6 text-blue-500" /> 
                  VPS Configuration
                </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Konfigurasi API Backend untuk sinkronisasi database MySQL.</p>
+               <p className="text-slate-500 text-sm mb-8 italic">Konfigurasi alamat server backend (Node.js/Express).</p>
                <div className="space-y-6">
                   <div>
                     <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend API URL</label>
@@ -161,7 +166,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             type="text" 
                             className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50" 
                             placeholder="http://178.128.106.33:3000" 
-                            value={tempSettings.vpsApiUrl} 
+                            value={tempSettings.vpsApiUrl || ''} 
                             onChange={(e) => setTempSettings({...tempSettings, vpsApiUrl: e.target.value})} 
                         />
                         <button onClick={() => handleTestConnection('vps')} className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-2">
@@ -169,15 +174,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                            Tes VPS
                         </button>
                     </div>
-                    {connectionMsg && activeTab === 'settings' && (
-                      <div className={`mt-3 p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                          {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                          {connectionMsg}
-                      </div>
-                    )}
                   </div>
                   <div className="pt-6 border-t flex items-center gap-4">
-                     <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95">
+                     <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all">
                         <Save className="w-4 h-4" /> Simpan Pengaturan
                      </button>
                      {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
@@ -192,17 +191,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <FileSpreadsheet className="w-7 h-7 text-emerald-600" /> 
                  Integrasi Google Sheets
                </h2>
-               <p className="text-slate-500 text-sm mb-8">Sinkronisasi database ke Spreadsheet menggunakan Google Apps Script.</p>
+               <p className="text-slate-500 text-sm mb-8">Gunakan Google Apps Script untuk sinkronisasi database ke Spreadsheet secara berkala.</p>
                <div className="space-y-8">
                   <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
                     <div>
-                        <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Google Apps Script (GAS) URL</label>
+                        <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Google Apps Script (GAS) Web App URL</label>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <input 
                                 type="url" 
                                 className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-mono" 
                                 placeholder="https://script.google.com/macros/s/.../exec" 
-                                value={tempSettings.viteGasUrl} 
+                                value={tempSettings.viteGasUrl || ''} 
                                 onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} 
                             />
                             <button onClick={() => handleTestConnection('gas')} className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 flex items-center gap-2">
@@ -218,7 +217,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                     )}
                     <button onClick={handleSaveSettings} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
-                        Simpan URL GAS
+                        Simpan URL Sheets
                     </button>
                   </div>
 
@@ -228,7 +227,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} /> 
                             Sinkronisasi Database
                         </h4>
-                        <p className="text-sm text-emerald-600 mt-1 italic">Kirim seluruh data lokal ke Google Sheets sekarang.</p>
+                        <p className="text-sm text-emerald-600 mt-1 italic">Kirim seluruh data lokal (Inventory, Transaksi, Users) ke Google Sheets sekarang.</p>
                         {tempSettings.lastSheetSync && (
                             <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-emerald-700/60 uppercase">
                                 <Clock className="w-3 h-3" />
@@ -238,7 +237,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                     <button 
                         onClick={handleManualSync}
-                        disabled={isSyncing || !tempSettings.viteGasUrl.includes('script.google.com')}
+                        disabled={isSyncing || !isGasUrlValid(tempSettings.viteGasUrl)}
                         className="w-full md:w-auto px-10 py-5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-2xl text-sm font-black shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
                     >
                         {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
@@ -255,7 +254,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <Wrench className="w-6 h-6 text-amber-500" /> 
                  Setup & Migrasi Data
                </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Backup dan Restore database lokal dalam format JSON.</p>
+               <p className="text-slate-500 text-sm mb-8 italic">Kelola backup database lokal dan pembersihan data browser.</p>
                
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
@@ -263,10 +262,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <Download className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-slate-800">Ekspor Backup (.json)</h4>
-                          <p className="text-xs text-slate-500 mt-1">Simpan data lokal ke file JSON untuk dipindahkan ke perangkat lain.</p>
+                          <h4 className="font-bold text-slate-800">Ekspor Backup JSON</h4>
+                          <p className="text-xs text-slate-500 mt-1">Unduh seluruh data lokal untuk dipindahkan ke komputer lain.</p>
                       </div>
-                      <button onClick={exportAllData} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Ekspor JSON</button>
+                      <button onClick={exportAllData} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Unduh JSON</button>
                   </div>
 
                   <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
@@ -274,11 +273,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <Upload className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-slate-800">Impor Backup (.json)</h4>
-                          <p className="text-xs text-slate-500 mt-1">Restore data dari file JSON backup sebelumnya.</p>
+                          <h4 className="font-bold text-slate-800">Impor Backup JSON</h4>
+                          <p className="text-xs text-slate-500 mt-1">Pulihkan data dari file JSON backup sebelumnya.</p>
                       </div>
                       <input type="file" ref={importFileRef} className="hidden" accept=".json" onChange={handleImport} />
-                      <button onClick={() => importFileRef.current?.click()} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">Impor JSON</button>
+                      <button onClick={() => importFileRef.current?.click()} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">Pilih File</button>
                   </div>
 
                   <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col items-center text-center space-y-4 md:col-span-2">
@@ -286,8 +285,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <RotateCcw className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-rose-800">Reset Cache Browser</h4>
-                          <p className="text-xs text-rose-600 mt-1">Hapus seluruh data di Local Storage (Hati-hati, data tidak dapat dikembalikan).</p>
+                          <h4 className="font-bold text-rose-800">Hapus Seluruh Cache Browser</h4>
+                          <p className="text-xs text-rose-600 mt-1">Hati-hati! Ini akan menghapus semua data lokal dan memaksa Anda keluar.</p>
                       </div>
                       <button onClick={resetLocalCache} className="px-8 py-3 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-lg shadow-rose-100">Reset & Logout</button>
                   </div>
