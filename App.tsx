@@ -86,7 +86,7 @@ const App: React.FC = () => {
         setSettings(activeSettings);
     }
 
-    if (vpsUrl && vpsUrl.trim().length > 0) {
+    if (vpsUrl && vpsUrl !== '/') {
       try {
         const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
@@ -99,15 +99,7 @@ const App: React.FC = () => {
             setRejectItems(cloudData.reject_inventory || []);
             setRejectLogs(cloudData.rejects || []);
             setSuppliers(cloudData.suppliers || []);
-            
-            // Critical Fix: Jika database kosong (fresh install), gunakan INITIAL_USERS agar admin tetap bisa login
-            const remoteUsers = cloudData.users || [];
-            if (remoteUsers.length > 0) {
-                setUsers(remoteUsers);
-            } else {
-                console.warn("Database users kosong. Menggunakan default admin lokal.");
-                setUsers(INITIAL_USERS);
-            }
+            if (cloudData.users && cloudData.users.length > 0) setUsers(cloudData.users);
             
             setIsCloudConnected(true);
             if (conn.dbStatus === 'CONNECTED') showToast('Koneksi VPS & MySQL Aktif', 'success');
@@ -128,7 +120,6 @@ const App: React.FC = () => {
 
   useEffect(() => { loadData(); }, []);
 
-  // Restore Session if available (Basic persist)
   useEffect(() => {
     const savedSession = sessionStorage.getItem('smartstock_session_user');
     if (savedSession) {
@@ -158,16 +149,14 @@ const App: React.FC = () => {
   const isMounted = useRef(false);
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
-  // Real-time sync ke VPS (MySQL)
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && dbStatus === 'CONNECTED') {
+    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && settings.vpsApiUrl !== '/' && dbStatus === 'CONNECTED') {
       setIsSaving(true);
       await syncBackendData(settings.vpsApiUrl, type as any, data);
       setIsSaving(false);
     }
   };
 
-  // Sinkronisasi manual ke Google Sheets (GAS)
   const handleFullSync = async () => {
     if (!settings.viteGasUrl || !settings.viteGasUrl.includes('script.google.com')) {
         showToast('URL Google Apps Script belum dikonfigurasi!', 'warning');
@@ -190,15 +179,16 @@ const App: React.FC = () => {
         
         if (result.success) {
             showToast('Sync Google Sheets Berhasil!', 'success');
-            setSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
+            const now = new Date().toISOString();
+            setSettings(prev => ({ ...prev, lastSheetSync: now }));
+            saveToStorage('smartstock_settings', { ...settings, lastSheetSync: now });
             return true;
         } else {
-            const errorMsg = result.message || 'Error tidak diketahui pada server GAS.';
-            showToast('Gagal Sync ke Spreadsheet: ' + errorMsg, 'error');
+            showToast('Gagal Sync ke Spreadsheet: ' + (result.message || 'Unknown error'), 'error');
             return false;
         }
     } catch (e: any) {
-        showToast('Kesalahan Jaringan: ' + (e.message || 'Cek koneksi internet.'), 'error');
+        showToast('Kesalahan Jaringan: ' + e.message, 'error');
         return false;
     } finally {
         setIsSaving(false);
@@ -227,12 +217,10 @@ const App: React.FC = () => {
   const deleteItem = (id: string) => { setItems(prev => prev.filter(item => item.id !== id)); showToast('Barang dihapus', 'warning'); };
 
   const processTransaction = (transaction: Transaction) => {
-    try {
-        const updatedInventory = calculateStockChange(items, transaction);
-        setTransactions(prev => [transaction, ...prev]);
-        setItems(updatedInventory);
-        showToast(`Transaksi ${transaction.type} diproses`, 'success');
-    } catch (e: any) { showToast('Transaksi gagal', 'error'); }
+    const updatedInventory = calculateStockChange(items, transaction);
+    setTransactions(prev => [transaction, ...prev]);
+    setItems(updatedInventory);
+    showToast(`Transaksi ${transaction.type} diproses`, 'success');
   };
 
   const updateTransaction = (updatedTx: Transaction) => {
@@ -242,7 +230,7 @@ const App: React.FC = () => {
 
   const deleteTransaction = (id: string) => {
     setTransactions(prev => prev.filter(tx => tx.id !== id));
-    showToast('Transaksi dihapus dari riwayat', 'warning');
+    showToast('Transaksi dihapus', 'warning');
   };
 
   const calculateStockChange = (currentItems: InventoryItem[], tx: Transaction): InventoryItem[] => {
@@ -259,7 +247,6 @@ const App: React.FC = () => {
     return newItems;
   };
 
-  // --- RENDER LOGIN PAGE IF NO USER ---
   if (!currentUser) {
       return (
           <>
@@ -267,7 +254,7 @@ const App: React.FC = () => {
             <LoginPage 
                 users={users} 
                 onLogin={handleLogin} 
-                isLoadingData={isLoading && users.length === 0}
+                isLoadingData={isLoading}
                 settings={settings}
                 onUpdateSettings={handleUpdateSettings}
             />
@@ -286,14 +273,13 @@ const App: React.FC = () => {
       >
         <div className="h-32 flex items-center justify-center relative border-b border-emerald-900/30 overflow-hidden flex-shrink-0">
           <div className="absolute w-16 h-16 border border-emerald-500/20 rotate-45 transform bg-emerald-900/10 backdrop-blur-sm" />
-          <div className="absolute w-24 h-24 border-2 border-dashed border-emerald-500/10 rounded-full animate-[spin_12s_linear_infinite]" />
-          <div className="relative z-10 p-2">
+          <div className="absolute z-10 p-2">
             {isBlinking ? <EyeOff className="w-12 h-12 text-emerald-500/80 drop-shadow-[0_0_10px_rgba(16,185,129,0.5)] transition-all duration-100" /> : <Eye className="w-12 h-12 text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.8)] transition-all duration-100" strokeWidth={1.5} />}
           </div>
           <button className="md:hidden absolute right-4 top-4 p-1 hover:bg-slate-800 rounded-lg text-slate-400" onClick={() => setIsMobileMenuOpen(false)}><X className="w-5 h-5" /></button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden flex flex-col custom-scrollbar">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto flex flex-col custom-scrollbar">
           <button onClick={() => { setCurrentView(AppView.DASHBOARD); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.DASHBOARD ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><LayoutDashboard className="w-5 h-5 shrink-0" /><span className="font-medium">Dashboard</span></button>
           <button onClick={() => { setCurrentView(AppView.INVENTORY); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.INVENTORY ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><Package className="w-5 h-5 shrink-0" /><span className="font-medium">Inventory</span></button>
           <button onClick={() => { setCurrentView(AppView.TRANSACTIONS); setIsMobileMenuOpen(false); }} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors whitespace-nowrap ${currentView === AppView.TRANSACTIONS ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}><ArrowRightLeft className="w-5 h-5 shrink-0" /><span className="font-medium">Transaksi</span></button>
@@ -310,74 +296,38 @@ const App: React.FC = () => {
           </div>
         </nav>
         
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-            <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-emerald-500 flex items-center justify-center font-bold text-white text-xs">
-                    {currentUser.name.charAt(0)}
-                </div>
-                <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
-                    <p className="text-[10px] text-slate-500 truncate capitalize">{currentUser.role}</p>
-                </div>
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white text-xs">
+                {currentUser.name.charAt(0)}
+            </div>
+            <div className="min-w-0">
+                <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
+                <p className="text-[10px] text-slate-500 uppercase">{currentUser.role}</p>
             </div>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50 transition-all duration-300">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
         <header className="flex justify-between items-center p-4 md:p-8 pb-4 shrink-0 bg-slate-50 z-20">
             <div className="flex items-center gap-4">
                 <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu className="w-6 h-6" /></button>
-                <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="hidden md:flex p-2 text-slate-500 hover:bg-white hover:text-blue-600 hover:shadow-sm border border-transparent hover:border-slate-200 rounded-lg transition-all">{isSidebarCollapsed ? <PanelLeftOpen className="w-6 h-6" /> : <PanelLeftClose className="w-6 h-6" />}</button>
-                <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm mt-1">Sistem Manajemen Gudang (VPS + Cloud Enabled)</p></div>
+                <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="hidden md:flex p-2 text-slate-500 hover:bg-white rounded-lg transition-all">{isSidebarCollapsed ? <PanelLeftOpen className="w-6 h-6" /> : <PanelLeftClose className="w-6 h-6" />}</button>
+                <div><h1 className="text-xl md:text-2xl font-bold text-slate-900">POWER INVENTORY</h1><p className="text-slate-500 text-xs md:text-sm">Warehouse Management System</p></div>
             </div>
             <div className="flex items-center gap-3">
-                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm shadow-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${isCloudConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
                     {isCloudConnected ? <Cloud className="w-3.5 h-3.5" /> : <CloudOff className="w-3.5 h-3.5" />}
                     {isCloudConnected ? 'Cloud Active' : 'Local Mode'}
                 </div>
-                {isCloudConnected && (
-                    <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${dbStatus === 'CONNECTED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm animate-pulse'}`}>
-                        <Database className="w-3.5 h-3.5" />
-                        {dbStatus === 'CONNECTED' ? 'DB Connected' : 'DB Offline'}
-                    </div>
-                )}
                 {isSaving && <div className="text-[10px] text-slate-400 animate-pulse flex items-center gap-1"><SaveIcon className="w-3 h-3" /> Saving...</div>}
                 <button onClick={() => loadData()} className="p-2 text-slate-500 hover:text-blue-600 rounded-full transition-transform active:rotate-180 duration-500"><RefreshCw className="w-5 h-5" /></button>
             </div>
         </header>
         <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4">
             {currentView === AppView.DASHBOARD && <Dashboard items={items} transactions={transactions} />}
-            {currentView === AppView.INVENTORY && (
-                <InventoryTable 
-                  items={items} onAddItem={addItem} onBatchAdd={addBatchItems} onUpdateItem={updateItem} onDeleteItem={deleteItem} 
-                  userRole={currentUser.role} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} 
-                />
-            )}
-            {currentView === AppView.TRANSACTIONS && (
-              <TransactionManager 
-                inventory={items} 
-                transactions={transactions} 
-                onProcessTransaction={processTransaction} 
-                onUpdateTransaction={updateTransaction} 
-                onDeleteTransaction={deleteTransaction}
-                userRole={currentUser.role} 
-                columns={tablePrefs.transactions} 
-                onToggleColumn={(id) => toggleColumn('transactions', id)} 
-              />
-            )}
-            {currentView === AppView.REJECT && (
-              <RejectManager 
-                rejectMasterData={rejectItems} 
-                rejectLogs={rejectLogs} 
-                onProcessReject={(log) => { setRejectLogs(prev => [log, ...prev]); showToast('Log Reject berhasil disimpan', 'success'); }} 
-                onUpdateRejectLog={(updatedLog) => { setRejectLogs(prev => prev.map(l => l.id === updatedLog.id ? updatedLog : l)); showToast('Log Reject diperbarui', 'success'); }} 
-                onDeleteRejectLog={(id) => { setRejectLogs(prev => prev.filter(l => l.id !== id)); showToast('Log Reject dihapus', 'warning'); }} 
-                onUpdateRejectMaster={(newList) => { setRejectItems(newList); showToast('Master Reject diperbarui', 'info'); }} 
-                userRole={currentUser.role} 
-                columns={tablePrefs.rejects} 
-                onToggleColumn={(id) => toggleColumn('rejects', id)} 
-              />
-            )}
+            {currentView === AppView.INVENTORY && <InventoryTable items={items} onAddItem={addItem} onBatchAdd={addBatchItems} onUpdateItem={updateItem} onDeleteItem={deleteItem} userRole={currentUser.role} columns={tablePrefs.inventory} onToggleColumn={(id) => toggleColumn('inventory', id)} />}
+            {currentView === AppView.TRANSACTIONS && <TransactionManager inventory={items} transactions={transactions} onProcessTransaction={processTransaction} onUpdateTransaction={updateTransaction} onDeleteTransaction={deleteTransaction} userRole={currentUser.role} columns={tablePrefs.transactions} onToggleColumn={(id) => toggleColumn('transactions', id)} />}
+            {currentView === AppView.REJECT && <RejectManager rejectMasterData={rejectItems} rejectLogs={rejectLogs} onProcessReject={(log) => { setRejectLogs(prev => [log, ...prev]); }} onUpdateRejectLog={(log) => { setRejectLogs(prev => prev.map(l => l.id === log.id ? log : l)); }} onDeleteRejectLog={(id) => { setRejectLogs(prev => prev.filter(l => l.id !== id)); }} onUpdateRejectMaster={setRejectItems} userRole={currentUser.role} columns={tablePrefs.rejects} onToggleColumn={(id) => toggleColumn('rejects', id)} />}
             {currentView === AppView.HISTORY && <ItemHistory transactions={transactions} items={items} columns={tablePrefs.history} onToggleColumn={(id) => toggleColumn('history', id)} />}
             {currentView === AppView.SUPPLIERS && <SupplierManager suppliers={suppliers} onAddSupplier={(s) => setSuppliers([...suppliers, s])} onUpdateSupplier={() => {}} onDeleteSupplier={() => {}} userRole={currentUser.role} columns={tablePrefs.suppliers} onToggleColumn={(id) => toggleColumn('suppliers', id)} />}
             {currentView === AppView.AI_ASSISTANT && <AIAssistant items={items} />}
