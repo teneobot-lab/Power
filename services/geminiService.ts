@@ -2,14 +2,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { InventoryItem } from "../types";
 
-// Check for API key presence to help debug issues
-if (!process.env.API_KEY) {
-  console.warn("⚠️ Warning: Gemini API Key is missing in environment variables (VITE_API_KEY). AI features will fail.");
-}
-
-// Initialize AI client as per @google/genai guidelines using process.env.API_KEY
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 // Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
   return JSON.stringify(items.map(item => ({
@@ -30,6 +22,8 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
  */
 export const getInventoryInsights = async (items: InventoryItem[]): Promise<string> => {
   try {
+    // Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const inventoryData = formatInventoryContext(items);
     
     // Using gemini-3-flash-preview for summarization task as per guidelines
@@ -52,7 +46,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Check if your API Key is valid and set in .env";
+    return "Failed to generate insights. Check if your API Key is valid and set in environment variables.";
   }
 };
 
@@ -65,6 +59,8 @@ export const chatWithInventoryBot = async (
   items: InventoryItem[]
 ): Promise<string> => {
   try {
+    // Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const inventoryData = formatInventoryContext(items);
     
     // Upgraded to gemini-3-pro-preview for complex reasoning, coding, and math tasks
@@ -98,6 +94,6 @@ export const chatWithInventoryBot = async (
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting to Gemini. Please check your API Key configuration in .env";
+    return "Sorry, I'm having trouble connecting to Gemini. Please check your API Key configuration.";
   }
 };

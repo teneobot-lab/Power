@@ -3,58 +3,62 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Power Inventory | Blue Steel Edition</title>
+    <title>Power Inventory | Ultra Dark Edition</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --bg-deep: #020617;
+        --panel-bg: rgba(15, 23, 42, 0.6);
+        --teal-glow: rgba(45, 212, 191, 0.4);
+        --purple-glow: rgba(168, 85, 247, 0.4);
+      }
       body {
-        font-family: 'Inter', sans-serif;
-        background-color: #020617; /* slate-950 */
-        color: #f1f5f9; /* slate-100 */
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        background-color: var(--bg-deep);
+        color: #f1f5f9;
+        overflow-x: hidden;
       }
-      /* Custom Scrollbar Blue Steel */
-      ::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
+      ::-webkit-scrollbar { width: 5px; height: 5px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+      
+      .glass-card {
+        background: var(--panel-bg);
+        backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
       }
-      ::-webkit-scrollbar-track {
-        background: #0f172a; 
+      .sidebar-active {
+        background: linear-gradient(90deg, rgba(45, 212, 191, 0.2) 0%, rgba(45, 212, 191, 0) 100%);
+        border-left: 3px solid #2dd4bf;
+        color: #2dd4bf !important;
       }
-      ::-webkit-scrollbar-thumb {
-        background: #334155; 
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #475569; 
-      }
-      /* Luxury Glow Effects */
-      .glow-icon {
-        filter: drop-shadow(0 0 3px currentColor);
-      }
-      .glass-panel {
-        background: rgba(15, 23, 42, 0.8);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(51, 65, 85, 0.5);
-      }
+      .glow-teal { box-shadow: 0 0 20px var(--teal-glow); }
+      .glow-purple { box-shadow: 0 0 20px var(--purple-glow); }
+      
+      input::placeholder { color: #475569; opacity: 1; }
+      input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
-<script type="importmap">
+    <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "recharts": "https://esm.sh/recharts@^3.6.0",
-    "react-markdown": "https://esm.sh/react-markdown@^10.1.0",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "react": "https://esm.sh/react@^19.0.0",
+    "react-dom": "https://esm.sh/react-dom@^19.0.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.469.0",
+    "recharts": "https://esm.sh/recharts@^2.15.0",
+    "react-markdown": "https://esm.sh/react-markdown@^9.0.3",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "xlsx": "https://esm.sh/xlsx@^0.18.5"
+    "xlsx": "https://esm.sh/xlsx@^0.18.5",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
-</head>
-  <body class="bg-slate-950 text-slate-100 selection:bg-blue-500/30">
+  </head>
+  <body class="bg-[#020617]">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
