@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, AppSettings, UserRole } from './types';
 import { generateId, saveToStorage, loadFromStorage } from './utils/storageUtils';
 import { checkServerConnection } from './services/api';
 import { hashPassword } from './utils/security';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, ServerCrash, FileCode, FileJson, FileText, ChevronRight, Play, Trash2, Edit2, Wrench, Download, Upload, RotateCcw } from 'lucide-react';
+import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, Trash2, Edit2, Wrench, Download, Upload, RotateCcw } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -60,6 +59,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       try {
           const success = await onFullSyncToSheets();
           if (success) {
+            // Update local timestamp after successful sync
             setTempSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
           }
       } catch (e) {
@@ -84,7 +84,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `SmartStock_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `PowerInventory_Backup_${new Date().toISOString().split('T')[0]}.json`;
     link.click();
   };
 
@@ -98,19 +98,23 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         if (confirm("Import data akan menimpa data lokal saat ini. Lanjutkan?")) {
             if (data.inventory) saveToStorage('smartstock_inventory', data.inventory);
             if (data.transactions) saveToStorage('smartstock_transactions', data.transactions);
+            if (data.reject_inventory) saveToStorage('smartstock_reject_inventory', data.reject_inventory);
+            if (data.rejects) saveToStorage('smartstock_rejects', data.rejects);
+            if (data.suppliers) saveToStorage('smartstock_suppliers', data.suppliers);
+            if (data.users) saveToStorage('smartstock_users', data.users);
             if (data.settings) saveToStorage('smartstock_settings', data.settings);
-            alert("Data berhasil diimpor. Silakan refresh halaman.");
+            alert("Data berhasil diimpor. Aplikasi akan memuat ulang.");
             window.location.reload();
         }
       } catch (err) {
-        alert("Gagal membaca file backup.");
+        alert("Gagal membaca file backup. Pastikan format JSON valid.");
       }
     };
     reader.readAsText(file);
   };
 
   const resetLocalCache = () => {
-    if (confirm("Hapus seluruh cache data lokal di browser? Anda akan keluar otomatis.")) {
+    if (confirm("⚠️ PERINGATAN: Hapus seluruh cache data lokal di browser? Anda akan logout secara otomatis.")) {
         localStorage.clear();
         sessionStorage.clear();
         window.location.reload();
@@ -148,7 +152,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <Database className="w-6 h-6 text-blue-500" /> 
                  VPS Configuration
                </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Pastikan VPS Anda sudah menjalankan API Backend sebelum mengetes koneksi.</p>
+               <p className="text-slate-500 text-sm mb-8 italic">Konfigurasi API Backend untuk sinkronisasi database MySQL.</p>
                <div className="space-y-6">
                   <div>
                     <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend API URL</label>
@@ -156,7 +160,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <input 
                             type="text" 
                             className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50" 
-                            placeholder="http://ip-vps:3000" 
+                            placeholder="http://178.128.106.33:3000" 
                             value={tempSettings.vpsApiUrl} 
                             onChange={(e) => setTempSettings({...tempSettings, vpsApiUrl: e.target.value})} 
                         />
@@ -188,11 +192,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <FileSpreadsheet className="w-7 h-7 text-emerald-600" /> 
                  Integrasi Google Sheets
                </h2>
-               <p className="text-slate-500 text-sm mb-8">Sinkronisasi seluruh database ke Spreadsheet menggunakan Google Apps Script.</p>
+               <p className="text-slate-500 text-sm mb-8">Hubungkan aplikasi dengan Google Spreadsheet untuk backup data eksternal.</p>
                <div className="space-y-8">
                   <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
                     <div>
-                        <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">GAS Web App URL</label>
+                        <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Google Apps Script (GAS) URL</label>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <input 
                                 type="url" 
@@ -214,19 +218,19 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                     )}
                     <button onClick={handleSaveSettings} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
-                        Simpan URL
+                        Simpan URL GAS
                     </button>
                   </div>
 
                   <div className="p-8 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex-1">
-                        <h4 className="font-bold text-emerald-800 text-lg flex items-center gap-2">
+                    <div className="flex-1 text-center md:text-left">
+                        <h4 className="font-bold text-emerald-800 text-lg flex items-center justify-center md:justify-start gap-2">
                             <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} /> 
-                            Sinkronisasi Manual
+                            Sinkronisasi Database
                         </h4>
-                        <p className="text-sm text-emerald-600 mt-1 italic">Kirim seluruh data (Inventory, Transaksi, Users) ke Google Sheets sekarang.</p>
+                        <p className="text-sm text-emerald-600 mt-1 italic">Tekan tombol untuk mengirim seluruh data ke Spreadsheet sekarang.</p>
                         {tempSettings.lastSheetSync && (
-                            <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-emerald-700/60 uppercase">
+                            <div className="mt-2 flex items-center justify-center md:justify-start gap-2 text-[10px] font-bold text-emerald-700/60 uppercase">
                                 <Clock className="w-3 h-3" />
                                 Terakhir Sync: {new Date(tempSettings.lastSheetSync).toLocaleString('id-ID')}
                             </div>
@@ -235,7 +239,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     <button 
                         onClick={handleManualSync}
                         disabled={isSyncing || !tempSettings.viteGasUrl.includes('script.google.com')}
-                        className="px-10 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-2xl text-sm font-black shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center gap-3"
+                        className="w-full md:w-auto px-10 py-5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-2xl text-sm font-black shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
                     >
                         {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
                         SYNC KE SPREADSHEETS
@@ -251,7 +255,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                  <Wrench className="w-6 h-6 text-amber-500" /> 
                  Setup & Migrasi Data
                </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Kelola backup data lokal dan inisialisasi aplikasi.</p>
+               <p className="text-slate-500 text-sm mb-8 italic">Alat bantu untuk backup, restore, dan inisialisasi aplikasi.</p>
                
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
@@ -259,10 +263,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <Download className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-slate-800">Ekspor Backup</h4>
-                          <p className="text-xs text-slate-500 mt-1">Unduh seluruh data lokal dalam format JSON.</p>
+                          <h4 className="font-bold text-slate-800">Ekspor Backup (.json)</h4>
+                          <p className="text-xs text-slate-500 mt-1">Simpan seluruh database lokal ke file JSON untuk dipindahkan ke perangkat lain.</p>
                       </div>
-                      <button onClick={exportAllData} className="w-full py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">Unduh JSON</button>
+                      <button onClick={exportAllData} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all">Unduh Backup JSON</button>
                   </div>
 
                   <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
@@ -270,11 +274,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <Upload className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-slate-800">Impor Backup</h4>
-                          <p className="text-xs text-slate-500 mt-1">Pulihkan data dari file JSON backup sebelumnya.</p>
+                          <h4 className="font-bold text-slate-800">Impor Backup (.json)</h4>
+                          <p className="text-xs text-slate-500 mt-1">Pulihkan database dari file backup yang telah diunduh sebelumnya.</p>
                       </div>
                       <input type="file" ref={importFileRef} className="hidden" accept=".json" onChange={handleImport} />
-                      <button onClick={() => importFileRef.current?.click()} className="w-full py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700">Pilih File</button>
+                      <button onClick={() => importFileRef.current?.click()} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">Pilih File Backup</button>
                   </div>
 
                   <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col items-center text-center space-y-4 md:col-span-2">
@@ -282,10 +286,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                           <RotateCcw className="w-6 h-6" />
                       </div>
                       <div>
-                          <h4 className="font-bold text-rose-800">Reset Total Browser</h4>
-                          <p className="text-xs text-rose-600 mt-1">Gunakan ini jika aplikasi error atau ingin membersihkan seluruh data (Local Storage).</p>
+                          <h4 className="font-bold text-rose-800">Hapus Cache Lokal Browser</h4>
+                          <p className="text-xs text-rose-600 mt-1">Gunakan ini jika aplikasi tidak responsif atau ingin membersihkan data lokal dari nol.</p>
                       </div>
-                      <button onClick={resetLocalCache} className="px-8 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-lg shadow-rose-100">Reset Semua Cache</button>
+                      <button onClick={resetLocalCache} className="px-8 py-3 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-lg shadow-rose-100 transition-all">Reset & Logout</button>
                   </div>
                </div>
             </div>
