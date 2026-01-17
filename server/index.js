@@ -33,6 +33,25 @@ async function initDb() {
         const connection = await pool.getConnection();
         console.log('✅ DATABASE TERHUBUNG: SmartStock DB Ready!');
         dbConnected = true;
+        
+        // --- AUTO-FIX & RESET ADMIN PASSWORD ---
+        // Hash SHA-256 untuk 'admin22'
+        const ADMIN_HASH = '3d3467611599540c49097e3a2779836183c50937617565437172083626217315';
+        
+        try {
+            // Pastikan user admin ada dan passwordnya di-reset ke default
+            const [rows] = await connection.query("SELECT * FROM users WHERE username = 'admin'");
+            if (rows.length === 0) {
+                console.log("⚠️ User 'admin' tidak ditemukan. Membuat baru...");
+                await connection.query("INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', ?, 'admin', 'active', NOW())", [ADMIN_HASH]);
+            } else {
+                console.log("ℹ️ Mereset password user 'admin' ke default (admin22) untuk menjamin akses...");
+                await connection.query("UPDATE users SET password = ?, status = 'active' WHERE username = 'admin'", [ADMIN_HASH]);
+            }
+        } catch (err) {
+            console.error("Gagal melakukan auto-fix user:", err.message);
+        }
+
         connection.release();
     } catch (err) {
         console.error('❌ DATABASE ERROR:', err.message);
@@ -69,31 +88,44 @@ const checkDb = (req, res, next) => {
     next();
 };
 
-// --- AUTH ENDPOINT (NEW) ---
+// --- AUTH ENDPOINT (UPDATED WITH LOGS) ---
 app.post('/api/login', checkDb, async (req, res) => {
     const { username, password } = req.body;
+    console.log(`🔐 Login Attempt: Username='${username}'`);
+
     try {
         const [rows] = await pool.query('SELECT * FROM users WHERE username = ?', [username]);
-        if (rows.length === 0) return res.status(401).json({ status: 'error', message: 'Username tidak ditemukan' });
+        if (rows.length === 0) {
+            console.log("❌ Login Gagal: Username tidak ditemukan di DB");
+            return res.status(401).json({ status: 'error', message: 'Username tidak ditemukan' });
+        }
 
         const user = rows[0];
+        const dbPassword = user.password || '';
         
         // 1. Cek Plain Text (Jika user dibuat manual di database tanpa hash)
-        if (user.password === password) {
-            // Opsional: Update ke hash agar lebih aman kedepannya
-            // const newHash = crypto.createHash('sha256').update(password).digest('hex');
-            // await pool.query('UPDATE users SET password = ? WHERE id = ?', [newHash, user.id]);
+        if (dbPassword === password) {
+            console.log("✅ Login Berhasil (Plain Text)");
+            await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
             return res.json({ status: 'success', data: toCamel(user) });
         }
 
         // 2. Cek Hash (SHA-256)
-        const hash = crypto.createHash('sha256').update(password).digest('hex');
-        if (user.password === hash) {
+        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
+        if (dbPassword === inputHash) {
+            console.log("✅ Login Berhasil (Hashed)");
+            await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
             return res.json({ status: 'success', data: toCamel(user) });
         }
 
+        console.log(`❌ Login Gagal: Password Mismatch.`);
+        console.log(`   Input: '${password}'`);
+        console.log(`   Input Hash: ${inputHash}`);
+        console.log(`   DB Stored : ${dbPassword}`);
+        
         res.status(401).json({ status: 'error', message: 'Password salah' });
     } catch (e) {
+        console.error("Login Error:", e);
         res.status(500).json({ status: 'error', message: e.message });
     }
 });
@@ -127,18 +159,7 @@ app.get('/api/data', checkDb, async (req, res) => {
         const [rejInv] = await pool.query('SELECT * FROM reject_inventory');
         const [rejLogs] = await pool.query('SELECT * FROM rejects ORDER BY timestamp DESC');
         const [sup] = await pool.query('SELECT * FROM suppliers');
-        
-        // --- AUTO-FIX USER & CREATE ADMIN ---
-        let [usr] = await pool.query('SELECT * FROM users');
-        const ADMIN_HASH = '3d3467611599540c49097e3a2779836183c50937617565437172083626217315';
-
-        if (usr.length === 0) {
-             console.log("⚠️ Users table empty. Creating default admin...");
-             const defaultAdminSql = "INSERT INTO users (id, name, username, password, role, status, last_login) VALUES ('1', 'Admin Utama', 'admin', ?, 'admin', 'active', NOW())";
-             await pool.query(defaultAdminSql, [ADMIN_HASH]);
-             [usr] = await pool.query('SELECT * FROM users'); // Re-fetch
-        }
-
+        const [usr] = await pool.query('SELECT * FROM users');
         const [setRows] = await pool.query('SELECT * FROM settings');
 
         const settings = {};

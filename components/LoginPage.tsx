@@ -65,7 +65,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                 throw new Error(result.message);
             }
         } catch (serverErr: any) {
-            // Abaikan error jaringan untuk mencoba fallback lokal
+            // Jika error adalah pesan valid dari server (bukan network error), tampilkan ke user
+            if (serverErr.message !== 'Failed to fetch' && !serverErr.message.includes('Network')) {
+                 console.warn("Server validation error:", serverErr.message);
+                 throw serverErr; 
+            }
             console.warn("Server login failed, falling back to local:", serverErr);
         }
 
@@ -87,10 +91,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ users, onLogin, isLoadingData, se
                     onLogin(foundUser);
                 } else {
                     if (cryptoWarning && cleanPassword !== 'admin22' && cleanPassword !== foundUser.password) {
-                         // Pesan error spesifik jika HTTP issue
-                         throw new Error('Login Gagal. Di koneksi HTTP, password harus cocok 100% (Case Sensitive) atau gunakan HTTPS.');
+                         throw new Error('Browser membatasi keamanan. Coba gunakan password default (admin22) atau password teks biasa.');
                     }
-                    throw new Error('Password yang Anda masukkan salah.');
+                    throw new Error('Password salah (Cek Server Log jika menggunakan VPS).');
                 }
             } catch (hashError: any) {
                 console.error("Login Error:", hashError);
