@@ -116,11 +116,11 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
     
     if (baseUrl.includes('script.google.com')) {
-        // GAS doesn't support CORS for simple HEAD/GET often, so we assume OK if URL is valid structure
         return { online: true, message: 'Format URL Google Apps Script valid.', dbStatus: 'UNKNOWN', latency: Date.now() - start };
     }
     
-    const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/api/data`; 
+    // Gunakan root path atau data path untuk cek hidup/matinya server
+    const url = `${cleanBase}/`; 
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); 
@@ -139,11 +139,17 @@ export const checkServerConnection = async (baseUrl: string): Promise<{
     }
 
     if (response.ok) {
-        const contentType = response.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-             return { online: true, message: 'Koneksi ke VPS & Database normal.', dbStatus: 'CONNECTED', latency };
+        // Cek apakah server merespon JSON status online
+        const data = await response.json().catch(() => null);
+        if (data && data.status === 'online') {
+            return { 
+                online: true, 
+                message: 'Koneksi ke VPS & Database normal.', 
+                dbStatus: data.database === 'connected' ? 'CONNECTED' : 'DISCONNECTED', 
+                latency 
+            };
         }
-        return { online: true, message: 'Server merespon (Bukan JSON).', dbStatus: 'UNKNOWN', latency };
+        return { online: true, message: 'Server merespon.', dbStatus: 'UNKNOWN', latency };
     } else {
         return { online: false, message: `Server error: ${response.status}` };
     }

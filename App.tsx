@@ -75,7 +75,7 @@ const App: React.FC = () => {
     const activeSettings = customSettings || loadFromStorage('smartstock_settings', DEFAULT_SETTINGS);
     const vpsUrl = activeSettings.vpsApiUrl;
     
-    // Load local first
+    // 1. Selalu load data lokal terlebih dahulu sebagai fallback
     if (!customSettings) {
         setItems(loadFromStorage('smartstock_inventory', INITIAL_INVENTORY));
         setTransactions(loadFromStorage('smartstock_transactions', []));
@@ -86,30 +86,31 @@ const App: React.FC = () => {
         setSettings(activeSettings);
     }
 
-    if (vpsUrl && vpsUrl !== '/') {
+    // 2. Cek koneksi ke VPS
+    if (vpsUrl && vpsUrl !== '') {
       try {
         const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
+        
+        // Update status koneksi berdasarkan hasil ping server
+        setIsCloudConnected(conn.online);
 
-        if (conn.online) {
+        if (conn.online && conn.dbStatus === 'CONNECTED') {
           const cloudData = await fetchBackendData(vpsUrl);
           if (cloudData) {
-            setItems(cloudData.inventory || []);
-            setTransactions(cloudData.transactions || []);
-            setRejectItems(cloudData.reject_inventory || []);
-            setRejectLogs(cloudData.rejects || []);
-            setSuppliers(cloudData.suppliers || []);
+            // Update state dengan data dari cloud
+            if (cloudData.inventory) setItems(cloudData.inventory);
+            if (cloudData.transactions) setTransactions(cloudData.transactions);
             if (cloudData.users && cloudData.users.length > 0) setUsers(cloudData.users);
             
-            setIsCloudConnected(true);
-            if (conn.dbStatus === 'CONNECTED') showToast('Koneksi VPS & MySQL Aktif', 'success');
-          } else {
-            setIsCloudConnected(false);
+            // Note: Reject & Supplier modul mungkin belum ada di server default, kita handle graceful
+            if (cloudData.reject_inventory) setRejectItems(cloudData.reject_inventory);
+            if (cloudData.rejects) setRejectLogs(cloudData.rejects);
+            if (cloudData.suppliers) setSuppliers(cloudData.suppliers);
           }
-        } else {
-          setIsCloudConnected(false);
         }
       } catch (error) {
+        console.error("Connection check failed:", error);
         setIsCloudConnected(false);
       }
     } else {
