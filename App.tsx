@@ -14,7 +14,7 @@ import SupplierManager from './components/SupplierManager';
 import AdminPanel from './components/AdminPanel';
 import LoginPage from './components/LoginPage';
 import ToastContainer from './components/Toast';
-import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, PanelLeftClose, PanelLeftOpen, LogOut, Terminal } from 'lucide-react';
+import { LayoutDashboard, Package, Bot, Eye, EyeOff, ArrowRightLeft, History, RefreshCw, Save as SaveIcon, Cloud, CloudOff, Users, ShieldCheck, AlertCircle, Menu, PanelLeftClose, PanelLeftOpen, LogOut, Terminal, User as UserIcon } from 'lucide-react';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -187,7 +187,7 @@ const App: React.FC = () => {
     <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       <ToastContainer toasts={toasts} onRemove={removeToast} />
       
-      <aside className={`fixed inset-y-0 left-0 z-50 bg-slate-900/90 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl transform transition-all duration-500 ease-in-out md:relative md:translate-x-0 
+      <aside className={`fixed inset-y-0 left-0 z-50 bg-slate-900/95 backdrop-blur-xl border-r border-slate-800/50 flex flex-col shadow-2xl transform transition-all duration-500 ease-in-out md:relative md:translate-x-0 
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} 
         ${isSidebarCollapsed ? 'md:w-0 md:opacity-0 md:overflow-hidden' : 'md:w-72 md:opacity-100'}
         w-72`}
@@ -206,49 +206,63 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto flex flex-col custom-scrollbar">
+        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto flex flex-col custom-scrollbar">
           <button onClick={() => { setCurrentView(AppView.DASHBOARD); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.DASHBOARD)}>
             <LayoutDashboard className={iconClass} />
-            <span className="font-bold text-sm tracking-wide">Command Center</span>
+            <span className="font-bold text-sm tracking-wide">Dashboard</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.INVENTORY); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.INVENTORY)}>
             <Package className={iconClass} />
-            <span className="font-bold text-sm tracking-wide">Asset Registry</span>
+            <span className="font-bold text-sm tracking-wide">Inventory</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.TRANSACTIONS); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.TRANSACTIONS)}>
             <ArrowRightLeft className={iconClass} />
-            <span className="font-bold text-sm tracking-wide">Data Flow</span>
+            <span className="font-bold text-sm tracking-wide">Transaksi</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.REJECT); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.REJECT)}>
             <AlertCircle className={`${iconClass} text-rose-500/70`} />
-            <span className="font-bold text-sm tracking-wide">Reject Control</span>
+            <span className="font-bold text-sm tracking-wide">Reject</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.HISTORY); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.HISTORY)}>
             <History className={iconClass} />
-            <span className="font-bold text-sm tracking-wide">Event Log</span>
+            <span className="font-bold text-sm tracking-wide">Riwayat</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.SUPPLIERS); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.SUPPLIERS)}>
             <Users className={iconClass} />
-            <span className="font-bold text-sm tracking-wide">Network Entities</span>
+            <span className="font-bold text-sm tracking-wide">Suppliers</span>
           </button>
           <button onClick={() => { setCurrentView(AppView.AI_ASSISTANT); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.AI_ASSISTANT)}>
             <Bot className={`${iconClass} text-emerald-400`} />
-            <span className="font-bold text-sm tracking-wide">AI Neural Core</span>
+            <span className="font-bold text-sm tracking-wide">AI Agent</span>
           </button>
           
-          <div className="pt-6 mt-4 border-t border-slate-800/50">
+          <div className="pt-4 mt-2 border-t border-slate-800/50">
             {currentUser.role === 'admin' && (
               <button onClick={() => { setCurrentView(AppView.ADMIN); setIsMobileMenuOpen(false); }} className={navItemClass(AppView.ADMIN)}>
                 <ShieldCheck className={`${iconClass} text-indigo-400`} />
                 <span className="font-bold text-sm tracking-wide">Admin Access</span>
               </button>
             )}
-            <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-rose-500/10 text-rose-400 mt-2">
-              <LogOut className={iconClass} />
-              <span className="font-bold text-sm tracking-wide">Terminate Session</span>
-            </button>
           </div>
         </nav>
+
+        {/* User Profile Footer Section */}
+        <div className="p-4 border-t border-slate-800/50 bg-slate-900/50 flex flex-col gap-4">
+          <div className="flex items-center gap-3 px-3 py-3 rounded-2xl bg-slate-800/40 border border-slate-700/50 backdrop-blur-md shadow-inner">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600/30 to-blue-900/30 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
+               <UserIcon className="w-5 h-5 text-blue-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-black text-slate-100 uppercase truncate leading-tight tracking-tight">{currentUser.name}</p>
+              <p className="text-[10px] text-blue-500/80 font-bold lowercase truncate mt-0.5 tracking-wider">@{currentUser.username}</p>
+            </div>
+          </div>
+          
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-rose-500/10 text-rose-400 group">
+            <LogOut className={`${iconClass} group-hover:translate-x-1 transition-transform`} />
+            <span className="font-bold text-sm tracking-wide uppercase">Keluar</span>
+          </button>
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
