@@ -91,19 +91,14 @@ const App: React.FC = () => {
       try {
         const conn = await checkServerConnection(vpsUrl);
         setDbStatus(conn.dbStatus || 'UNKNOWN');
-        
-        // Update status koneksi berdasarkan hasil ping server
         setIsCloudConnected(conn.online);
 
         if (conn.online && conn.dbStatus === 'CONNECTED') {
           const cloudData = await fetchBackendData(vpsUrl);
           if (cloudData) {
-            // Update state dengan data dari cloud
             if (cloudData.inventory) setItems(cloudData.inventory);
             if (cloudData.transactions) setTransactions(cloudData.transactions);
             if (cloudData.users && cloudData.users.length > 0) setUsers(cloudData.users);
-            
-            // Note: Reject & Supplier modul mungkin belum ada di server default, kita handle graceful
             if (cloudData.reject_inventory) setRejectItems(cloudData.reject_inventory);
             if (cloudData.rejects) setRejectLogs(cloudData.rejects);
             if (cloudData.suppliers) setSuppliers(cloudData.suppliers);
@@ -151,7 +146,8 @@ const App: React.FC = () => {
   useEffect(() => { if (!isLoading) isMounted.current = true; }, [isLoading]);
 
   const syncToCloud = async (type: string, data: any) => {
-    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && settings.vpsApiUrl !== '/' && dbStatus === 'CONNECTED') {
+    // FIX: Izinkan sync jika vpsApiUrl adalah '/' (Proxy)
+    if (isMounted.current && isCloudConnected && settings.vpsApiUrl && dbStatus === 'CONNECTED') {
       setIsSaving(true);
       await syncBackendData(settings.vpsApiUrl, type as any, data);
       setIsSaving(false);
