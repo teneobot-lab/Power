@@ -50,16 +50,12 @@ const toCamel = (row) => {
     return res;
 };
 
-/**
- * Konversi ISO String (JS) ke MySQL Datetime Format
- * Contoh: '2026-01-17T11:32:55.165Z' -> '2026-01-17 11:32:55'
- */
 const toMysqlDate = (isoString) => {
     if (!isoString) return null;
     try {
         return isoString.replace('T', ' ').split('.')[0].replace('Z', '');
     } catch (e) {
-        return isoString; // Fallback jika bukan format ISO
+        return isoString;
     }
 };
 
@@ -156,6 +152,16 @@ app.get(['/api/data', '/data'], checkDb, async (req, res) => {
         const [rejects] = await pool.query('SELECT * FROM rejects');
         const [suppliers] = await pool.query('SELECT * FROM suppliers');
         const [users] = await pool.query('SELECT * FROM users');
+        const [settingsRows] = await pool.query('SELECT * FROM settings');
+        
+        const settings = {};
+        settingsRows.forEach(row => {
+            try {
+                settings[row.setting_key] = JSON.parse(row.setting_value);
+            } catch (e) {
+                settings[row.setting_key] = row.setting_value;
+            }
+        });
 
         res.json({
             status: 'success',
@@ -165,7 +171,8 @@ app.get(['/api/data', '/data'], checkDb, async (req, res) => {
                 reject_inventory: reject_inventory.map(toCamel),
                 rejects: rejects.map(toCamel),
                 suppliers: suppliers.map(toCamel),
-                users: users.map(toCamel)
+                users: users.map(toCamel),
+                settings: settings
             }
         });
     } catch (err) {
@@ -195,8 +202,14 @@ app.post(['/api/login', '/login'], checkDb, async (req, res) => {
 
 app.post(['/api/sync', '/sync'], checkDb, async (req, res) => {
     const { type, data } = req.body;
-    if (!type || !data || !Array.isArray(data)) {
-        return res.status(400).json({ status: 'error', message: 'Data sync tidak valid atau bukan array' });
+    
+    // Perbaikan Validasi: settings dikirim sebagai Object, sisanya sebagai Array
+    if (!type || !data) {
+        return res.status(400).json({ status: 'error', message: 'Data sync tidak lengkap' });
+    }
+    
+    if (type !== 'settings' && !Array.isArray(data)) {
+        return res.status(400).json({ status: 'error', message: `Data sync untuk ${type} harus berupa array` });
     }
 
     const conn = await pool.getConnection();
@@ -255,6 +268,15 @@ app.post(['/api/sync', '/sync'], checkDb, async (req, res) => {
                     `INSERT INTO users (id, name, username, password, role, status, last_login)
                      VALUES (?, ?, ?, ?, ?, ?, ?)`,
                     [item.id, item.name, item.username, item.password, item.role, item.status, toMysqlDate(item.lastLogin)]
+                );
+            }
+        } else if (type === 'settings') {
+            // Logika untuk menyimpan Object Settings
+            for (const [key, value] of Object.entries(data)) {
+                await conn.query(
+                    `INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) 
+                     ON DUPLICATE KEY UPDATE setting_value = ?`,
+                    [key, JSON.stringify(value), JSON.stringify(value)]
                 );
             }
         }

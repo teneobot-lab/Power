@@ -1,51 +1,39 @@
-
 import React, { useMemo } from 'react';
 import { InventoryItem, Transaction } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, Legend 
+  PieChart, Pie, Cell 
 } from 'recharts';
-import { DollarSign, Package, AlertTriangle, TrendingUp, ArrowRight } from 'lucide-react';
+import { DollarSign, Package, AlertTriangle, TrendingUp, ShieldCheck, Box } from 'lucide-react';
 
 interface DashboardProps {
   items: InventoryItem[];
   transactions: Transaction[];
 }
 
-const COLORS = ['#0f172a', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1'];
+const COLORS = ['#2563eb', '#3b82f6', '#6366f1', '#818cf8', '#475569', '#1e293b'];
 
-// Custom Tooltip Component for Bar Chart
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload; 
-    const item: InventoryItem | undefined = data.fullItem;
-    
     return (
-      <div className="bg-white p-3 border border-slate-200 rounded-lg shadow-lg">
-        <p className="font-bold text-slate-800 mb-1">{label}</p>
-        <p className="text-sm text-blue-600 font-medium">
-          Total Keluar: {data.quantity}
+      <div className="bg-slate-900/90 backdrop-blur-md p-3 border border-slate-800 rounded-xl shadow-2xl">
+        <p className="font-bold text-slate-100 mb-1 text-xs uppercase tracking-wider">{label}</p>
+        <p className="text-sm text-blue-400 font-black">
+          Keluar: {data.quantity}
         </p>
-        {item && (
-           <p className="text-xs text-slate-500 mt-1 pt-1 border-t border-slate-100">
-             Sisa Stok Saat Ini: {item.quantity} {item.baseUnit}
-           </p>
-        )}
       </div>
     );
   }
-
   return null;
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
-  
   const stats = useMemo(() => {
     const totalItems = items.length;
     const lowStockCount = items.filter(i => i.minLevel > 0 && i.quantity <= i.minLevel).length;
     const totalValue = items.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0);
     const totalStockCount = items.reduce((acc, curr) => acc + curr.quantity, 0);
-
     return { totalItems, lowStockCount, totalValue, totalStockCount };
   }, [items]);
 
@@ -62,185 +50,125 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
     return Object.keys(counts).map(key => ({ name: key, value: counts[key] }));
   }, [items]);
 
-  // Logic: Top 5 Items Most Frequently Appearing in Outbound Transactions (by Quantity)
   const topItemsData = useMemo(() => {
     const counts: Record<string, number> = {};
-    // Map item names to their IDs to look up full item details later
-    const nameToIdMap: Record<string, string> = {}; 
+    transactions.filter(t => t.type === 'OUT').forEach(t => {
+      t.items.forEach(item => { counts[item.itemName] = (counts[item.itemName] || 0) + item.quantityInput; });
+    });
+    return Object.entries(counts).map(([name, qty]) => ({
+      name: name.length > 12 ? name.substring(0, 12) + '..' : name,
+      quantity: qty
+    })).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+  }, [transactions]);
 
-    transactions
-      .filter(t => t.type === 'OUT')
-      .forEach(t => {
-        t.items.forEach(item => {
-          counts[item.itemName] = (counts[item.itemName] || 0) + item.quantityInput;
-          nameToIdMap[item.itemName] = item.itemId;
-        });
-      });
-
-    return Object.entries(counts)
-      .map(([name, qty]) => {
-         // Try to find current stock info for the tooltip
-         const fullItem = items.find(i => i.name === name) || items.find(i => i.id === nameToIdMap[name]);
-         return {
-            name: name.length > 15 ? name.substring(0, 15) + '...' : name,
-            quantity: qty,
-            fullItem: fullItem
-         };
-      })
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, 5);
-  }, [transactions, items]);
+  const StatCard = ({ title, value, icon: Icon, colorClass, iconColor }: any) => (
+    <div className="bg-slate-900/50 backdrop-blur-sm p-6 rounded-2xl border border-slate-800 hover:border-blue-500/30 transition-all duration-300 group">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">{title}</p>
+          <h3 className={`text-2xl font-black tracking-tight ${colorClass}`}>{value}</h3>
+        </div>
+        <div className={`p-4 rounded-xl bg-slate-950 border border-slate-800 shadow-inner group-hover:scale-110 transition-transform ${iconColor}`}>
+          <Icon className="w-6 h-6 glow-icon" />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 pb-6">
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                    <p className="text-sm font-medium text-slate-500">Total Value</p>
-                    <h3 className="text-2xl font-bold text-slate-900">
-                        Rp {stats.totalValue.toLocaleString('id-ID')}
-                    </h3>
-                    </div>
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                    <DollarSign className="w-6 h-6 text-blue-600" />
-                    </div>
-                </div>
-                </div>
+    <div className="space-y-8 animate-in fade-in duration-700">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard title="Inventory Valuation" value={`Rp ${stats.totalValue.toLocaleString('id-ID')}`} icon={DollarSign} colorClass="text-slate-100" iconColor="text-blue-500" />
+            <StatCard title="Total Asset Units" value={stats.totalStockCount} icon={Package} colorClass="text-slate-100" iconColor="text-emerald-500" />
+            <StatCard title="Critical Alerts" value={stats.lowStockCount} icon={AlertTriangle} colorClass={stats.lowStockCount > 0 ? "text-rose-500" : "text-slate-100"} iconColor={stats.lowStockCount > 0 ? "text-rose-500" : "text-slate-600"} />
+            <StatCard title="Catalog Depth" value={stats.totalItems} icon={TrendingUp} colorClass="text-slate-100" iconColor="text-indigo-500" />
+        </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                    <p className="text-sm font-medium text-slate-500">Total Units</p>
-                    <h3 className="text-2xl font-bold text-slate-900">{stats.totalStockCount}</h3>
-                    </div>
-                    <div className="p-3 bg-emerald-50 rounded-lg">
-                    <Package className="w-6 h-6 text-emerald-600" />
-                    </div>
-                </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                    <p className="text-sm font-medium text-slate-500">Low Stock Items</p>
-                    <h3 className={`text-2xl font-bold ${stats.lowStockCount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{stats.lowStockCount}</h3>
-                    </div>
-                    <div className={`p-3 rounded-lg ${stats.lowStockCount > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}>
-                    <AlertTriangle className={`w-6 h-6 ${stats.lowStockCount > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
-                    </div>
-                </div>
-                </div>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                    <p className="text-sm font-medium text-slate-500">Unique SKUs</p>
-                    <h3 className="text-2xl font-bold text-slate-900">{stats.totalItems}</h3>
-                    </div>
-                    <div className="p-3 bg-violet-50 rounded-lg">
-                    <TrendingUp className="w-6 h-6 text-violet-600" />
-                    </div>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-slate-900/40 p-8 rounded-3xl border border-slate-800 shadow-xl">
+                <h3 className="text-sm font-black text-slate-400 mb-8 uppercase tracking-widest flex items-center gap-2">
+                   <ShieldCheck className="w-4 h-4 text-blue-500" /> Velocity: Top Outbound Flows
+                </h3>
+                <div className="h-[300px] w-full">
+                    {topItemsData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={topItemsData} layout="vertical" margin={{ left: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#1e293b" />
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 10, fill: '#64748b', fontWeight: 800}} />
+                            <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(255,255,255,0.05)'}} />
+                            <Bar dataKey="quantity" fill="#2563eb" radius={[0, 4, 4, 0]} barSize={24} />
+                        </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="h-full flex items-center justify-center text-slate-600 text-xs font-bold uppercase tracking-widest italic">No flow data recorded</div>
+                    )}
                 </div>
             </div>
 
-            {/* Charts & Alerts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                
-                {/* Top Stock Levels */}
-                <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Top 5 Barang Paling Banyak Keluar</h3>
-                    <div className="h-[300px] w-full">
-                        {topItemsData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={topItemsData} layout="vertical" margin={{ left: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                                <XAxis type="number" />
-                                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
-                                <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
-                                <Bar dataKey="quantity" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={30} />
-                            </BarChart>
-                            </ResponsiveContainer>
-                        ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400 italic">
-                                Belum ada data transaksi keluar.
-                            </div>
-                        )}
-                    </div>
+            <div className="bg-slate-900/40 p-8 rounded-3xl border border-slate-800 shadow-xl">
+                <h3 className="text-sm font-black text-slate-400 mb-8 uppercase tracking-widest flex items-center gap-2">
+                   <Box className="w-4 h-4 text-indigo-500" /> Segment Allocation
+                </h3>
+                <div className="h-[300px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie
+                          data={categoryData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={8}
+                          dataKey="value"
+                        >
+                          {categoryData.map((_, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} className="outline-none" />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderRadius: '12px', border: '1px solid #1e293b', color: '#f1f5f9' }} itemStyle={{ fontSize: '10px' }} />
+                    </PieChart>
+                    </ResponsiveContainer>
                 </div>
+            </div>
 
-                {/* Category Distribution */}
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Inventory by Category</h3>
-                    <div className="h-[300px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                            <Pie
-                            data={categoryData}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="value"
-                            >
-                            {categoryData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                            ))}
-                            </Pie>
-                            <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
-                        </PieChart>
-                        </ResponsiveContainer>
-                    </div>
+            <div className="lg:col-span-3 bg-slate-900/60 p-8 rounded-3xl border border-slate-800/50 shadow-2xl">
+                <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-sm font-black text-slate-300 uppercase tracking-[0.2em] flex items-center gap-3">
+                        <AlertTriangle className="w-5 h-5 text-rose-500 glow-icon" />
+                        Critical Depletion Protocol
+                    </h3>
                 </div>
-
-                {/* Low Stock Notifications List */}
-                <div className="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                            <AlertTriangle className="w-5 h-5 text-amber-500" />
-                            Low Stock Warnings
-                        </h3>
-                        {stats.lowStockCount > 0 && (
-                            <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">
-                                {stats.lowStockCount} ALERTS
-                            </span>
-                        )}
-                    </div>
-                    {lowStockItems.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                            {lowStockItems.map(item => (
-                                <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-lg group hover:border-amber-300 transition-all">
-                                    <div className="min-w-0">
-                                        <p className="text-sm font-bold text-slate-800 truncate">{item.name}</p>
-                                        <p className="text-xs text-slate-500">SKU: {item.sku}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <div className="flex items-center gap-1.5 justify-end">
-                                            <span className="text-sm font-bold text-amber-600">{item.quantity}</span>
-                                            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tighter">/ {item.minLevel} {item.baseUnit}</span>
-                                        </div>
-                                        <div className="w-24 h-1.5 bg-slate-200 rounded-full mt-1 overflow-hidden">
-                                            <div 
-                                                className="h-full bg-amber-500 rounded-full" 
-                                                style={{ width: `${Math.min(100, (item.quantity / item.minLevel) * 100)}%` }}
-                                            />
-                                        </div>
-                                    </div>
+                {lowStockItems.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        {lowStockItems.map(item => (
+                            <div key={item.id} className="p-5 bg-slate-950 border border-slate-800 rounded-2xl group hover:border-rose-500/50 transition-all shadow-inner">
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className="min-w-0">
+                                      <p className="text-xs font-black text-slate-100 uppercase truncate leading-tight">{item.name}</p>
+                                      <p className="text-[10px] text-slate-600 font-mono tracking-tighter mt-1">{item.sku}</p>
+                                  </div>
+                                  <span className="text-rose-500 font-black text-sm">{item.quantity}</span>
                                 </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="py-12 flex flex-col items-center justify-center text-slate-400">
-                            <Package className="w-12 h-12 mb-3 opacity-20" />
-                            <p className="text-sm">All stock levels are currently healthy.</p>
-                        </div>
-                    )}
-                </div>
+                                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-gradient-to-r from-rose-600 to-rose-400 rounded-full" 
+                                        style={{ width: `${Math.min(100, (item.quantity / item.minLevel) * 100)}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between mt-2 text-[9px] font-bold text-slate-600 uppercase tracking-tighter">
+                                   <span>Availability: {((item.quantity/item.minLevel)*100).toFixed(0)}%</span>
+                                   <span>Threshold: {item.minLevel}</span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="py-20 flex flex-col items-center justify-center text-slate-600 opacity-30">
+                        <ShieldCheck className="w-16 h-16 mb-4" strokeWidth={1} />
+                        <p className="text-xs font-black tracking-widest uppercase italic">All asset levels nominal</p>
+                    </div>
+                )}
             </div>
         </div>
     </div>

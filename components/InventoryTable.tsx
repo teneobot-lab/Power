@@ -1,8 +1,7 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { InventoryItem, UnitDefinition, UserRole, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Search, Plus, Filter, Edit2, Trash2, X, Eye, Columns, Download, FileSpreadsheet, Box, Power, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, X, Eye, Columns, Download, FileSpreadsheet, Box, Power, AlertTriangle, Layers, MapPin } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 import * as XLSX from 'xlsx';
 
@@ -27,20 +26,6 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
   const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   
-  const columnMenuRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const modalFormRef = useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
-        setIsColumnMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
   const [formData, setFormData] = useState<Partial<InventoryItem>>({});
   const [alternativeUnits, setAlternativeUnits] = useState<UnitDefinition[]>([]);
 
@@ -61,11 +46,6 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
       });
   }, [items, debouncedSearchTerm, categoryFilter]);
 
-  const formatCurrency = (val: number) => {
-    if (val === 0) return '-';
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
-  };
-
   const handleOpenModal = (item?: InventoryItem) => {
     if (item) {
       setEditingItem(item);
@@ -74,286 +54,152 @@ const InventoryTable: React.FC<InventoryTableProps> = ({
     } else {
       setEditingItem(null);
       setFormData({ 
-        category: '', location: '', name: '', sku: '', baseUnit: 'Pcs', status: 'active',
-        quantity: undefined, unitPrice: undefined, minLevel: undefined
+        category: '', location: '', name: '', sku: '', baseUnit: 'Pcs', status: 'active'
       });
       setAlternativeUnits([]);
     }
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    const newItem: InventoryItem = {
-      id: editingItem ? editingItem.id : generateId(),
-      name: formData.name || '',
-      sku: formData.sku || '',
-      category: formData.category || 'Lainnya', 
-      quantity: formData.quantity !== undefined ? Number(formData.quantity) : 0,
-      baseUnit: formData.baseUnit || 'Pcs',
-      alternativeUnits: alternativeUnits.map(u => ({ ...u, ratio: Number(u.ratio) || 0 })),
-      minLevel: formData.minLevel !== undefined ? Number(formData.minLevel) : 0,
-      unitPrice: formData.unitPrice !== undefined ? Number(formData.unitPrice) : 0,
-      location: formData.location || '',
-      lastUpdated: new Date().toISOString(),
-      status: formData.status || 'active'
-    };
-    if (editingItem) onUpdateItem(newItem);
-    else onAddItem(newItem);
-    setIsModalOpen(false);
-  };
-
-  // Logic navigasi antar field menggunakan panah
-  const handleArrowNavigation = (e: React.KeyboardEvent) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    
-    const form = modalFormRef.current;
-    if (!form) return;
-
-    // Ambil semua elemen input/select yang bisa difokuskan
-    const elements = Array.from(form.querySelectorAll('input:not([type="hidden"]), select, textarea')) as HTMLElement[];
-    const currentIndex = elements.indexOf(document.activeElement as HTMLElement);
-
-    if (currentIndex > -1) {
-      e.preventDefault();
-      if (e.key === 'ArrowDown') {
-        const nextElement = elements[currentIndex + 1];
-        if (nextElement) nextElement.focus();
-      } else {
-        const prevElement = elements[currentIndex - 1];
-        if (prevElement) prevElement.focus();
-      }
-    }
-  };
-
-  // Utility class untuk menyembunyikan spinner pada input number
-  const noSpinnerClass = "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
-
-  const handleDownloadTemplate = () => {
-    const data = [
-      ['ID BARANG (SKU)', 'NAMA BARANG', 'KATEGORI', 'SATUAN DASAR', 'STOK AWAL', 'HARGA BELI', 'LOKASI RAK', 'MINIMUM STOK', 'SATUAN ALT 1', 'KONVERSI ALT 1', 'SATUAN ALT 2', 'KONVERSI ALT 2'],
-      ['ITEM-001', 'Contoh Barang A', 'Elektronik', 'Pcs', 100, 50000, 'A-01', 10, 'Box', 12, 'Karton', 144]
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template_Inventory');
-    XLSX.writeFile(wb, 'Template_Master_Inventory.xlsx');
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const rawData = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as any[];
-        
-        const newItems: InventoryItem[] = rawData.map((row: any) => {
-          const getVal = (patterns: string[]) => {
-            const key = Object.keys(row).find(k => patterns.some(p => k.toUpperCase().includes(p.toUpperCase())));
-            return key ? row[key] : undefined;
-          };
-          const altUnits: UnitDefinition[] = [];
-          const u1 = getVal(['SATUAN ALT 1', 'UNIT ALT 1']);
-          const r1 = getVal(['KONVERSI ALT 1', 'RASIO 1']);
-          if (u1 && r1) altUnits.push({ name: String(u1), ratio: Number(r1) });
-          const u2 = getVal(['SATUAN ALT 2', 'UNIT ALT 2']);
-          const r2 = getVal(['KONVERSI ALT 2', 'RASIO 2']);
-          if (u2 && r2) altUnits.push({ name: String(u2), ratio: Number(r2) });
-
-          return {
-            id: generateId(),
-            sku: String(getVal(['SKU', 'ID BARANG', 'KODE']) || `SKU-${Math.random().toString(36).substr(2, 5).toUpperCase()}`),
-            name: String(getVal(['NAMA', 'NAMA BARANG']) || 'Item Baru'),
-            category: String(getVal(['KATEGORI', 'CATEGORY']) || 'Umum'),
-            baseUnit: String(getVal(['SATUAN DASAR', 'BASE UNIT']) || 'Pcs'),
-            quantity: Number(getVal(['STOK', 'JUMLAH', 'QUANTITY']) || 0),
-            unitPrice: Number(getVal(['HARGA', 'PRICE', 'BELI']) || 0),
-            location: String(getVal(['LOKASI', 'LOCATION', 'RAK']) || ''),
-            minLevel: Number(getVal(['MINIMUM', 'BATAS', 'MIN STOK']) || 0),
-            alternativeUnits: altUnits,
-            lastUpdated: new Date().toISOString(),
-            status: 'active'
-          };
-        });
-        if (onBatchAdd && newItems.length > 0) onBatchAdd(newItems);
-      } catch (error) { alert("Gagal membaca file Excel."); }
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const addAltUnit = () => setAlternativeUnits([...alternativeUnits, { name: '', ratio: 0 }]);
-  const removeAltUnit = (idx: number) => setAlternativeUnits(alternativeUnits.filter((_, i) => i !== idx));
-  const updateAltUnit = (idx: number, field: keyof UnitDefinition, val: string | number) => {
-    const updated = [...alternativeUnits];
-    // @ts-ignore
-    updated[idx] = { ...updated[idx], [field]: val };
-    setAlternativeUnits(updated);
-  };
+  const inputClass = "w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600";
+  const labelClass = "block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-1";
 
   return (
-    <div className="space-y-6 h-full flex flex-col">
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 w-full sm:w-auto shadow-sm">
-          <Search className="w-5 h-5 text-slate-400" />
-          <input type="text" placeholder="Cari barang atau SKU..." className="bg-transparent outline-none text-sm w-full sm:w-64" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+    <div className="space-y-8 h-full flex flex-col animate-in fade-in duration-500">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6 flex-shrink-0">
+        <div className="flex items-center gap-4 bg-slate-900/50 px-4 py-3 rounded-2xl border border-slate-800 w-full sm:w-auto shadow-inner">
+          <Search className="w-5 h-5 text-slate-500 glow-icon" />
+          <input type="text" placeholder="Search Assets or SKUs..." className="bg-transparent outline-none text-sm w-full sm:w-64 text-slate-200 placeholder:text-slate-600" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
-        <div className="flex gap-2 w-full sm:w-auto flex-wrap justify-end items-center">
-          <select className="bg-white border border-slate-200 text-slate-700 py-2 px-3 rounded-lg shadow-sm text-sm" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            <option value="All">Semua Kategori</option>
+        <div className="flex gap-3 w-full sm:w-auto flex-wrap justify-end">
+          <select className="bg-slate-900 border border-slate-800 text-slate-300 py-2.5 px-4 rounded-xl shadow-lg text-xs font-bold uppercase tracking-tighter" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="All">All Categories</option>
             {dynamicCategories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <div className="relative" ref={columnMenuRef}>
-            <button onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 shadow-sm transition-colors"><Columns className="w-5 h-5 text-slate-600" /></button>
+          <div className="relative">
+            <button onClick={() => setIsColumnMenuOpen(!isColumnMenuOpen)} className="p-3 bg-slate-900 border border-slate-800 rounded-xl hover:bg-slate-800 transition-colors shadow-lg"><Columns className="w-5 h-5 text-blue-400 glow-icon" /></button>
             {isColumnMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-[60] p-2">
+              <div className="absolute right-0 top-full mt-3 w-56 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-[60] p-3 animate-in fade-in zoom-in-95 duration-200 backdrop-blur-xl">
+                <p className="text-[10px] font-black text-slate-500 uppercase px-2 mb-2 tracking-widest">Visibility Control</p>
                 {columns.map(col => (
-                  <label key={col.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 rounded-lg cursor-pointer text-sm">
-                    <input type="checkbox" checked={col.visible} onChange={() => onToggleColumn(col.id)} />
-                    <span className="text-slate-700">{col.label}</span>
+                  <label key={col.id} className="flex items-center gap-3 px-2 py-2 hover:bg-slate-800 rounded-xl cursor-pointer text-xs font-bold text-slate-400 hover:text-slate-100 transition-colors">
+                    <input type="checkbox" checked={col.visible} onChange={() => onToggleColumn(col.id)} className="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-blue-500" />
+                    {col.label}
                   </label>
                 ))}
               </div>
             )}
           </div>
           {canEdit && (
-            <>
-               <input type="file" accept=".xlsx, .xls" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-               <div className="flex bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden h-[38px]">
-                  <button onClick={handleDownloadTemplate} className="px-3 py-2 text-slate-600 hover:bg-slate-50 border-r border-slate-200 flex items-center gap-2 text-sm"><Download className="w-4 h-4 text-blue-600" /> <span className="hidden sm:inline">Template</span></button>
-                  <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 text-slate-600 hover:bg-slate-50 flex items-center gap-2 text-sm"><FileSpreadsheet className="w-4 h-4 text-emerald-600" /> <span className="hidden sm:inline">Import</span></button>
-               </div>
-               <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm h-[38px]"><Plus className="w-4 h-4" /> Barang</button>
-            </>
+            <button onClick={() => handleOpenModal()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-[0.15em] shadow-xl shadow-blue-500/20 active:scale-95 transition-all"><Plus className="w-4 h-4" /> New Asset</button>
           )}
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col min-h-0">
+      <div className="bg-slate-900/30 rounded-3xl shadow-2xl border border-slate-900 flex-1 overflow-hidden flex flex-col min-h-0">
         <div className="overflow-auto flex-1 custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-              <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase">
-                {isVisible('name') && <th className="px-6 py-4">Nama Barang</th>}
-                {isVisible('category') && <th className="px-6 py-4">Kategori</th>}
-                {isVisible('quantity') && <th className="px-6 py-4 text-center">Stok</th>}
-                {isVisible('price') && <th className="px-6 py-4 text-right">Harga</th>}
-                {isVisible('location') && <th className="px-6 py-4 text-center">Lokasi</th>}
-                <th className="px-6 py-4 text-right">Aksi</th>
+          <table className="w-full text-left border-collapse min-w-[900px]">
+            <thead className="sticky top-0 z-10 bg-slate-900/90 backdrop-blur-md">
+              <tr className="border-b border-slate-800 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">
+                {isVisible('name') && <th className="px-8 py-5">Registry Name</th>}
+                {isVisible('category') && <th className="px-8 py-5">Segment</th>}
+                {isVisible('quantity') && <th className="px-8 py-5 text-center">In Stock</th>}
+                {isVisible('price') && <th className="px-8 py-5 text-right">Valuation</th>}
+                {isVisible('location') && <th className="px-8 py-5 text-center">Node</th>}
+                <th className="px-8 py-5 text-right">Protocol</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredItems.length > 0 ? filteredItems.map(item => {
-                const isAlertItem = (item.minLevel || 0) > 0 && item.quantity <= item.minLevel;
+            <tbody className="divide-y divide-slate-800/40">
+              {filteredItems.map(item => {
+                const isAlert = (item.minLevel || 0) > 0 && item.quantity <= item.minLevel;
                 const isInactive = item.status === 'inactive';
                 return (
-                  <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isInactive ? 'opacity-60 grayscale' : ''} ${isAlertItem && !isInactive ? 'bg-amber-50' : ''}`}>
+                  <tr key={item.id} className={`hover:bg-blue-500/5 transition-all duration-300 ${isInactive ? 'opacity-40 grayscale' : ''} ${isAlert ? 'bg-rose-500/5' : ''}`}>
                     {isVisible('name') && (
-                        <td className="px-6 py-4">
+                        <td className="px-8 py-5">
                           <div className="flex flex-col">
-                            <div className="flex items-center gap-2"><span className="font-medium">{item.name}</span> {isAlertItem && !isInactive && <AlertTriangle className="w-4 h-4 text-amber-500" />}</div>
-                            <span className="text-xs text-slate-400 font-mono">ID: {item.sku}</span>
+                            <div className="flex items-center gap-2 text-sm font-black text-slate-100 uppercase tracking-tight">
+                                {item.name} 
+                                {isAlert && <AlertTriangle className="w-3.5 h-3.5 text-rose-500 glow-icon" />}
+                            </div>
+                            <span className="text-[10px] text-slate-600 font-mono tracking-tighter mt-0.5">ID: {item.sku}</span>
                           </div>
                         </td>
                     )}
-                    {isVisible('category') && (<td className="px-6 py-4"><span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">{item.category}</span></td>)}
-                    {isVisible('quantity') && (<td className="px-6 py-4 text-center font-semibold">{item.quantity} {item.baseUnit}</td>)}
-                    {isVisible('price') && (<td className="px-6 py-4 text-right font-medium text-slate-600">{formatCurrency(item.unitPrice)}</td>)}
-                    {isVisible('location') && <td className="px-6 py-4 text-center text-sm text-slate-500">{item.location || '-'}</td>}
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-1">
-                        {canEdit ? (
-                            <>
-                                <button onClick={() => onUpdateItem({ ...item, status: item.status === 'inactive' ? 'active' : 'inactive' })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-full"><Power className="w-4 h-4" /></button>
-                                <button onClick={() => handleOpenModal(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full"><Edit2 className="w-4 h-4" /></button>
-                                <button onClick={() => window.confirm('Hapus?') && onDeleteItem(item.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full"><Trash2 className="w-4 h-4" /></button>
-                            </>
-                        ) : <button onClick={() => handleOpenModal(item)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full"><Eye className="w-4 h-4" /></button>}
+                    {isVisible('category') && (<td className="px-8 py-5"><span className="px-3 py-1 bg-slate-800 rounded-lg text-[10px] font-black text-slate-400 uppercase tracking-tighter border border-slate-700/50">{item.category}</span></td>)}
+                    {isVisible('quantity') && (<td className="px-8 py-5 text-center"><span className={`text-sm font-black ${isAlert ? 'text-rose-400' : 'text-slate-200'}`}>{item.quantity}</span> <span className="text-[10px] text-slate-500 font-bold uppercase">{item.baseUnit}</span></td>)}
+                    {isVisible('price') && (<td className="px-8 py-5 text-right text-xs font-bold text-slate-400">Rp {item.unitPrice.toLocaleString('id-ID')}</td>)}
+                    {isVisible('location') && <td className="px-8 py-5 text-center"><div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase"><MapPin className="w-3 h-3" /> {item.location || 'NONE'}</div></td>}
+                    <td className="px-8 py-5 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleOpenModal(item)} className="p-2 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl transition-all"><Edit2 className="w-4 h-4" /></button>
+                        <button onClick={() => onDeleteItem(item.id)} className="p-2 text-slate-500 hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
                   </tr>
                 );
-              }) : <tr><td colSpan={10} className="px-6 py-12 text-center text-slate-400">Data kosong.</td></tr>}
+              })}
             </tbody>
           </table>
         </div>
       </div>
 
       {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-              <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                  <div className="px-6 py-4 border-b bg-slate-50 flex justify-between items-center">
-                      <h3 className="font-bold text-slate-800 uppercase">{editingItem ? 'Edit Barang' : 'Barang Baru'}</h3>
-                      <button onClick={() => setIsModalOpen(false)}><X className="w-6 h-6 text-slate-400" /></button>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-xl p-4 animate-in fade-in duration-300">
+              <div className="bg-slate-900 rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-800 flex flex-col max-h-[90vh]">
+                  <div className="px-10 py-8 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
+                      <div>
+                        <h3 className="text-xl font-black text-slate-100 uppercase tracking-tighter">{editingItem ? 'Update Core Asset' : 'Register New Asset'}</h3>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Registry Synchronization Module</p>
+                      </div>
+                      <button onClick={() => setIsModalOpen(false)} className="p-2.5 hover:bg-slate-800 rounded-full text-slate-500 transition-all"><X className="w-6 h-6" /></button>
                   </div>
-                  <form ref={modalFormRef} onSubmit={handleSubmit} onKeyDown={handleArrowNavigation} className="p-6 overflow-y-auto space-y-6">
-                      <div className="grid grid-cols-2 gap-4">
+                  <div className="p-10 overflow-y-auto custom-scrollbar space-y-8">
+                      <div className="grid grid-cols-2 gap-6">
                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">NAMA BARANG</label>
-                              <input required className="w-full px-3 py-2 border rounded-lg outline-none text-sm" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
+                              <label className={labelClass}>Asset Identifier (SKU)</label>
+                              <input className={inputClass} value={formData.sku || ''} onChange={e => setFormData({...formData, sku: e.target.value})} />
                           </div>
                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">SKU</label>
-                              <input required className="w-full px-3 py-2 border rounded-lg outline-none text-sm" value={formData.sku || ''} onChange={e => setFormData({...formData, sku: e.target.value})} />
+                              <label className={labelClass}>Asset Name</label>
+                              <input className={inputClass} value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} />
                           </div>
                       </div>
 
-                      <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 space-y-4">
-                          <h4 className="text-xs font-bold text-blue-700 uppercase flex items-center gap-2"><Box className="w-4 h-4" /> Satuan & Stok</h4>
-                          <div className="grid grid-cols-2 gap-4">
+                      <div className="p-8 bg-slate-950 border border-slate-800 rounded-3xl space-y-6">
+                          <h4 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] flex items-center gap-2"><Layers className="w-4 h-4 glow-icon" /> Quantum Multi-Units</h4>
+                          <div className="grid grid-cols-2 gap-6">
                               <div>
-                                  <label className="block text-[10px] font-bold text-blue-600 mb-1">SATUAN DASAR</label>
-                                  <input required className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white" value={formData.baseUnit || ''} onChange={e => setFormData({...formData, baseUnit: e.target.value})} />
+                                  <label className={labelClass}>Base Satellite Unit</label>
+                                  <input className={inputClass} value={formData.baseUnit || ''} onChange={e => setFormData({...formData, baseUnit: e.target.value})} />
                               </div>
                               <div>
-                                  <label className="block text-[10px] font-bold text-blue-600 mb-1">STOK FISIK</label>
-                                  <input required type="number" step="any" className={`w-full px-3 py-2 border border-blue-200 rounded-lg text-sm bg-white outline-none ${noSpinnerClass}`} value={formData.quantity ?? ''} onChange={e => setFormData({...formData, quantity: e.target.value === '' ? undefined : Number(e.target.value)})} />
+                                  <label className={labelClass}>Initial Stock Matrix</label>
+                                  <input type="number" className={inputClass} value={formData.quantity ?? ''} onChange={e => setFormData({...formData, quantity: Number(e.target.value)})} />
                               </div>
-                          </div>
-                          <div className="space-y-2">
-                              <div className="flex justify-between items-center">
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase">Unit Alternatif</label>
-                                  <button type="button" onClick={addAltUnit} className="text-[10px] font-bold text-blue-600 bg-white border border-blue-200 px-2 py-1 rounded">+ Unit</button>
-                              </div>
-                              {alternativeUnits.map((u, i) => (
-                                  <div key={i} className="flex gap-2 items-end">
-                                      <input className="flex-1 px-3 py-1.5 border rounded-lg text-xs" placeholder="Unit (Box)" value={u.name} onChange={e => updateAltUnit(i, 'name', e.target.value)} />
-                                      <input type="number" step="any" className={`w-24 px-3 py-1.5 border rounded-lg text-xs outline-none ${noSpinnerClass}`} placeholder="Konversi" value={u.ratio || ''} onChange={e => updateAltUnit(i, 'ratio', e.target.value === '' ? 0 : Number(e.target.value))} />
-                                      <button type="button" onClick={() => removeAltUnit(i)} className="p-1.5 text-rose-500"><Trash2 className="w-4 h-4" /></button>
-                                  </div>
-                              ))}
                           </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-6 pb-6">
                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Kategori</label>
-                              <input className="w-full px-3 py-2 border rounded-lg text-sm" list="categories" value={formData.category || ''} onChange={e => setFormData({...formData, category: e.target.value})} />
-                              <datalist id="categories">{dynamicCategories.map(c => <option key={c} value={c} />)}</datalist>
+                              <label className={labelClass}>Price Valuation (Rp)</label>
+                              <input type="number" className={inputClass} value={formData.unitPrice ?? ''} onChange={e => setFormData({...formData, unitPrice: Number(e.target.value)})} />
                           </div>
                           <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Lokasi Rak</label>
-                              <input className="w-full px-3 py-2 border rounded-lg text-sm" value={formData.location || ''} onChange={e => setFormData({...formData, location: e.target.value})} />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Harga Satuan</label>
-                              <input type="number" step="any" className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${noSpinnerClass}`} value={formData.unitPrice ?? ''} onChange={e => setFormData({...formData, unitPrice: e.target.value === '' ? undefined : Number(e.target.value)})} />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Batas Reorder</label>
-                              <input type="number" step="any" className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${noSpinnerClass}`} value={formData.minLevel ?? ''} onChange={e => setFormData({...formData, minLevel: e.target.value === '' ? undefined : Number(e.target.value)})} />
+                              <label className={labelClass}>Depletion Threshold</label>
+                              <input type="number" className={inputClass} value={formData.minLevel ?? ''} onChange={e => setFormData({...formData, minLevel: Number(e.target.value)})} />
                           </div>
                       </div>
 
-                      <div className="pt-6 border-t flex justify-end gap-3">
-                          <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 font-medium">Batal</button>
-                          <button type="submit" className="px-8 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg">Simpan</button>
+                      <div className="pt-8 border-t border-slate-800 flex justify-end gap-4">
+                          <button onClick={() => setIsModalOpen(false)} className="px-8 py-3 text-slate-500 font-black text-xs uppercase tracking-widest hover:text-slate-200">Abort</button>
+                          <button onClick={() => {
+                              const item: any = { ...formData, id: editingItem?.id || generateId(), lastUpdated: new Date().toISOString() };
+                              if (editingItem) onUpdateItem(item); else onAddItem(item);
+                              setIsModalOpen(false);
+                          }} className="px-10 py-3 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all">Synchronize</button>
                       </div>
-                  </form>
+                  </div>
               </div>
           </div>
       )}
