@@ -1,5 +1,5 @@
 
-import React, { ReactNode, ErrorInfo } from 'react';
+import React, { Component, ReactNode, ErrorInfo } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
@@ -13,8 +13,8 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary for catching render-time crashes
-// Fixed: Explicitly using React.Component to ensure that the 'props' property is correctly inherited and typed.
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Explicitly using Component from react to resolve "Property 'state'/'props' does not exist" errors in TypeScript
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   // Use class property for state initialization to resolve property existence issues
   state: ErrorBoundaryState = {
     hasError: false,
@@ -53,7 +53,6 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
       );
     }
 
-    // Fixed: Properly returning children from this.props to resolve the TypeScript error on line 56
     return this.props.children;
   }
 }
