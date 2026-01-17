@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { RejectItem, RejectLog, RejectItemDetail, UserRole, TableColumn } from '../types';
 import { generateId } from '../utils/storageUtils';
-import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History, Copy, Edit3, Save, Layers, Scale, Box, Edit2 } from 'lucide-react';
+import { Calendar, Plus, Trash2, Search, Package, X, AlertCircle, AlertTriangle, FileText, ArrowRight, ClipboardList, Download, FileSpreadsheet, Keyboard, Database, ClipboardCheck, History, Copy, Edit3, Save, Layers, Scale, Box, Edit2, ArrowRightLeft } from 'lucide-react';
 import useDebounce from '../hooks/useDebounce';
 import * as XLSX from 'xlsx';
 
@@ -119,7 +119,10 @@ const RejectManager: React.FC<RejectManagerProps> = ({
   const handleAddToCart = () => {
     if (!selectedItem || !quantityInput) return;
     
-    const requestedBase = quantityInput * conversionRatio;
+    // LOGIKA PEMBAGIAN: Qty / Ratio = Base Qty
+    // Contoh: 500 GR / 1000 = 0.5 KG
+    const requestedBase = conversionRatio !== 0 ? quantityInput / conversionRatio : 0;
+
     const newItem: RejectItemDetail = {
       itemId: selectedItem.id, 
       itemName: selectedItem.name, 
@@ -189,7 +192,8 @@ const RejectManager: React.FC<RejectManagerProps> = ({
 
   const handleAddToEditCart = () => {
     if (!editSelectedItem || !editQuantityInput) return;
-    const requestedBase = editQuantityInput * editConversionRatio;
+    // LOGIKA PEMBAGIAN: Qty / Ratio
+    const requestedBase = editConversionRatio !== 0 ? editQuantityInput / editConversionRatio : 0;
     const newItem: RejectItemDetail = {
       itemId: editSelectedItem.id, 
       itemName: editSelectedItem.name, 
@@ -339,24 +343,16 @@ const RejectManager: React.FC<RejectManagerProps> = ({
     reader.readAsBinaryString(file);
   };
 
-  /**
-   * handleCopyToClipboard
-   * Format: ##Data Reject KKL (DDMMYY)##
-   * List: • ItemName - Qty Unit (Reason)
-   */
   const handleCopyToClipboard = (log: RejectLog) => {
-    // 1. Format date to DDMMYY
-    // Assumes log.date format is YYYY-MM-DD
     let ddmmyy = '';
     try {
         const parts = log.date.split('-');
         if (parts.length === 3) {
-            const y = parts[0].slice(-2); // YY
-            const m = parts[1]; // MM
-            const d = parts[2]; // DD
+            const y = parts[0].slice(-2);
+            const m = parts[1];
+            const d = parts[2];
             ddmmyy = `${d}${m}${y}`;
         } else {
-            // Fallback to current date if format unexpected
             const now = new Date();
             const d = String(now.getDate()).padStart(2, '0');
             const m = String(now.getMonth() + 1).padStart(2, '0');
@@ -479,6 +475,16 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                                 <button onClick={handleAddToCart} disabled={!selectedItem || !quantityInput} className="w-full py-2 bg-rose-600 text-white rounded-lg text-xs font-bold hover:bg-rose-700 disabled:bg-slate-200 transition-all">Add Log</button>
                             </div>
                         </div>
+                        
+                        {selectedItem && (
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter bg-white p-2 rounded-lg border border-slate-100 animate-in fade-in slide-in-from-left-1 mt-2">
+                            <Layers className="w-3.5 h-3.5 text-rose-500" />
+                            Konversi: {conversionRatio} {selectedUnit} = 1 {selectedItem.baseUnit} 
+                            {quantityInput !== undefined && (
+                              <span className="ml-auto text-rose-600">Terinput ke Sistem: {(quantityInput / conversionRatio).toFixed(4)} {selectedItem.baseUnit}</span>
+                            )}
+                          </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -494,7 +500,7 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                             <div key={idx} className="p-3 bg-white border border-slate-100 rounded-lg shadow-sm flex justify-between items-center group">
                                 <div className="min-w-0 flex-1">
                                     <div className="text-[11px] font-bold text-slate-800 uppercase truncate">{it.itemName}</div>
-                                    <div className="text-[10px] text-rose-500 font-bold uppercase">{it.quantity} {it.unit} • {it.reason}</div>
+                                    <div className="text-[10px] text-rose-500 font-bold uppercase">{it.quantity} {it.unit} ({(it.totalBaseQuantity).toFixed(4)} {it.baseUnit}) • {it.reason}</div>
                                 </div>
                                 <button onClick={() => setCartItems(cartItems.filter((_, i) => i !== idx))} className="p-1.5 text-slate-300 hover:text-rose-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
                             </div>
@@ -587,8 +593,8 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                                           <td className="px-6 py-4 text-xs font-medium text-slate-500 uppercase">{item.baseUnit}</td>
                                           <td className="px-6 py-4">
                                               <div className="flex flex-col gap-1">
-                                                  {item.unit2 && <span className="text-[9px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border">1 {item.unit2} = {item.ratio2} {item.baseUnit}</span>}
-                                                  {item.unit3 && <span className="text-[9px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border">1 {item.unit3} = {item.ratio3} {item.baseUnit}</span>}
+                                                  {item.unit2 && <span className="text-[9px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border">1 {item.baseUnit} = {item.ratio2} {item.unit2}</span>}
+                                                  {item.unit3 && <span className="text-[9px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border">1 {item.baseUnit} = {item.ratio3} {item.unit3}</span>}
                                                   {!item.unit2 && !item.unit3 && <span className="text-[9px] text-slate-300 italic">No alternative units</span>}
                                               </div>
                                           </td>
@@ -640,14 +646,13 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                   <div className="space-y-4 pt-4 border-t">
                       <h4 className="text-xs font-black text-slate-400 uppercase flex items-center gap-2"><Layers className="w-4 h-4" /> Multi-Unit Conversion (Opsional)</h4>
                       
-                      {/* Level 2 */}
                       <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100 flex items-end gap-3">
                         <div className="flex-1">
                             <label className="text-[10px] font-bold text-rose-600 block mb-1">Unit Level 2</label>
-                            <input value={newMasterItem.unit2 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit2: e.target.value})} className="w-full border border-rose-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-rose-500" placeholder="Box / Gr" />
+                            <input value={newMasterItem.unit2 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit2: e.target.value})} className="w-full border border-rose-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-rose-500" placeholder="Contoh: GR" />
                         </div>
                         <div className="w-32">
-                            <label className="text-[10px] font-bold text-rose-600 block mb-1">Rasio ke Base</label>
+                            <label className="text-[10px] font-bold text-rose-600 block mb-1">Ratio (X Unit = 1 Base)</label>
                             <div className="relative">
                                 <Scale className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-rose-300" />
                                 <input type="number" value={newMasterItem.ratio2 || 1} onChange={e => setNewMasterItem({...newMasterItem, ratio2: Number(e.target.value)})} className="w-full border border-rose-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-rose-500" />
@@ -655,14 +660,13 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                         </div>
                       </div>
 
-                      {/* Level 3 */}
                       <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex items-end gap-3">
                         <div className="flex-1">
                             <label className="text-[10px] font-bold text-blue-600 block mb-1">Unit Level 3</label>
-                            <input value={newMasterItem.unit3 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit3: e.target.value})} className="w-full border border-blue-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" placeholder="Karton / Sack" />
+                            <input value={newMasterItem.unit3 || ''} onChange={e => setNewMasterItem({...newMasterItem, unit3: e.target.value})} className="w-full border border-blue-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: PCS" />
                         </div>
                         <div className="w-32">
-                            <label className="text-[10px] font-bold text-blue-600 block mb-1">Rasio ke Base</label>
+                            <label className="text-[10px] font-bold text-blue-600 block mb-1">Ratio (X Unit = 1 Base)</label>
                             <div className="relative">
                                 <Scale className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-blue-300" />
                                 <input type="number" value={newMasterItem.ratio3 || 1} onChange={e => setNewMasterItem({...newMasterItem, ratio3: Number(e.target.value)})} className="w-full border border-blue-200 rounded-xl p-2.5 text-xs outline-none focus:ring-2 focus:ring-blue-500" />
@@ -684,7 +688,7 @@ const RejectManager: React.FC<RejectManagerProps> = ({
 
       {/* EDIT LOG MODAL */}
       {isEditModalOpen && editingLog && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-300">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="px-6 py-4 border-b bg-slate-50 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800">Edit Reject Log</h3>
@@ -702,7 +706,6 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                         </div>
                      </div>
 
-                     {/* Add New Item Section in Edit Modal */}
                      {canEdit && (
                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-3">Tambah Barang ke Log Ini</h4>
@@ -762,7 +765,7 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                              <div key={idx} className="flex justify-between items-center text-xs bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                                 <div className="min-w-0 flex-1">
                                     <div className="font-bold text-slate-800 uppercase truncate">{it.itemName}</div>
-                                    <div className="text-[9px] text-slate-400 mt-0.5">Reason: {it.reason}</div>
+                                    <div className="text-[9px] text-slate-400 mt-0.5">Reason: {it.reason} | Base: {(it.totalBaseQuantity).toFixed(4)} {it.baseUnit}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {canEdit ? (
@@ -774,7 +777,10 @@ const RejectManager: React.FC<RejectManagerProps> = ({
                                                 onChange={e => {
                                                     const val = Number(e.target.value);
                                                     const updated = [...editCartItems];
-                                                    updated[idx] = { ...updated[idx], quantity: val, totalBaseQuantity: val * (it.ratio || 1) };
+                                                    // PEMBAGIAN pada edit qty
+                                                    const ratio = it.ratio || 1;
+                                                    const baseQty = ratio !== 0 ? val / ratio : 0;
+                                                    updated[idx] = { ...updated[idx], quantity: val, totalBaseQuantity: baseQty };
                                                     setEditCartItems(updated);
                                                 }} 
                                             />
