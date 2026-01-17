@@ -67,9 +67,9 @@ export const chatWithInventoryBot = async (
   try {
     const inventoryData = formatInventoryContext(items);
     
-    // Creating chat with specific system instructions
+    // Upgraded to gemini-3-pro-preview for complex reasoning, coding, and math tasks
     const chat = ai.chats.create({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       config: {
         systemInstruction: `
           You are "SmartStock Agent", a highly intelligent and capable AI assistant for a warehouse manager.
@@ -94,7 +94,7 @@ export const chatWithInventoryBot = async (
     // sendMessage automatically manages message contents
     const response = await chat.sendMessage({ message: query });
     
-    // Access .text property directly
+    // Access .text property directly as per @google/genai documentation
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
