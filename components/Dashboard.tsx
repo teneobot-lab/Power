@@ -90,7 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ items, transactions }) => {
                             {items.slice(0, 8).map((_, index) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                             ))}
-                        </Bar> barSize={24} />
+                        </Bar>
                     </BarChart>
                     </ResponsiveContainer>
                 </div>
