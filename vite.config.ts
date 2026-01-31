@@ -8,22 +8,14 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // Penting: Polyfill process.env agar tidak crash di browser
       'process.env': {
-        API_KEY: env.VITE_API_KEY || '' // Mapping VITE_API_KEY ke process.env.API_KEY
+        API_KEY: env.VITE_API_KEY || ''
       }
     },
     server: {
       host: true,
-      port: 5173,
-      proxy: {
-        '/api': {
-          target: 'http://165.22.251.42:3000', // Proxy lokal diarahkan langsung ke VPS
-          changeOrigin: true,
-          secure: false,
-          rewrite: (path) => path 
-        }
-      }
+      port: 5173
+      // Proxy removed for pure GAS deployment
     }
   };
 });
