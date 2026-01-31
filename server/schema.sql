@@ -1,79 +1,88 @@
 
+-- Buat Database jika belum ada
 CREATE DATABASE IF NOT EXISTS smartstock_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 USE smartstock_db;
 
+-- 1. Tabel Master Inventory (Data Barang Utama)
 CREATE TABLE IF NOT EXISTS inventory (
-    id VARCHAR(50) PRIMARY KEY, 
-    sku VARCHAR(100), 
-    name VARCHAR(255), 
-    category VARCHAR(100), 
-    quantity INT, 
-    base_unit VARCHAR(50), 
-    alternative_units LONGTEXT, 
-    min_level INT, 
-    unit_price DECIMAL(15,2), 
-    location VARCHAR(100), 
+    id VARCHAR(50) PRIMARY KEY,
+    sku VARCHAR(100) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    category VARCHAR(100),
+    quantity INT DEFAULT 0,
+    base_unit VARCHAR(50) DEFAULT 'Pcs',
+    alternative_units LONGTEXT COMMENT 'Menyimpan JSON array unit konversi',
+    min_level INT DEFAULT 0,
+    unit_price DECIMAL(15, 2) DEFAULT 0,
+    location VARCHAR(100),
     last_updated DATETIME,
     status VARCHAR(20) DEFAULT 'active'
 );
 
+-- 2. Tabel Transaksi (Riwayat Masuk/Keluar)
 CREATE TABLE IF NOT EXISTS transactions (
-    id VARCHAR(50) PRIMARY KEY, 
-    date DATE, 
-    type VARCHAR(20), 
-    items LONGTEXT, 
-    notes TEXT, 
-    timestamp DATETIME, 
-    supplier_name VARCHAR(255), 
-    po_number VARCHAR(100), 
-    ri_number VARCHAR(100), 
-    photos LONGTEXT
+    id VARCHAR(50) PRIMARY KEY,
+    date DATE NOT NULL,
+    type VARCHAR(20) NOT NULL COMMENT 'IN atau OUT',
+    items LONGTEXT NOT NULL COMMENT 'Menyimpan JSON detail item transaksi',
+    notes TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    supplier_name VARCHAR(255),
+    po_number VARCHAR(100) COMMENT 'Nomor Purchase Order',
+    ri_number VARCHAR(100) COMMENT 'Nomor Surat Jalan/Resi',
+    photos LONGTEXT COMMENT 'Menyimpan JSON array base64 string foto'
 );
 
+-- 3. Tabel Master Reject (Data Barang Khusus Modul Reject)
+-- Modul ini independen dari stok utama
 CREATE TABLE IF NOT EXISTS reject_inventory (
-    id VARCHAR(50) PRIMARY KEY, 
+    id VARCHAR(50) PRIMARY KEY,
     sku VARCHAR(100),
-    name VARCHAR(255), 
-    base_unit VARCHAR(50), 
-    unit2 VARCHAR(50), 
-    ratio2 INT, 
-    unit3 VARCHAR(50), 
-    ratio3 INT, 
+    name VARCHAR(255),
+    base_unit VARCHAR(50),
+    unit2 VARCHAR(50),
+    ratio2 INT,
+    unit3 VARCHAR(50),
+    ratio3 INT,
     last_updated DATETIME
 );
 
+-- 4. Tabel Log Reject (Riwayat Barang Reject)
 CREATE TABLE IF NOT EXISTS rejects (
-    id VARCHAR(50) PRIMARY KEY, 
-    date DATE, 
-    items LONGTEXT, 
-    notes TEXT, 
-    timestamp DATETIME
+    id VARCHAR(50) PRIMARY KEY,
+    date DATE,
+    items LONGTEXT NOT NULL COMMENT 'Menyimpan JSON detail item reject & alasan',
+    notes TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 5. Tabel Supplier
 CREATE TABLE IF NOT EXISTS suppliers (
-    id VARCHAR(50) PRIMARY KEY, 
-    name VARCHAR(255), 
-    contact_person VARCHAR(255), 
-    email VARCHAR(255), 
-    phone VARCHAR(50), 
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    contact_person VARCHAR(255),
+    email VARCHAR(255),
+    phone VARCHAR(50),
     address TEXT
 );
 
+-- 6. Tabel User (Pengguna Aplikasi)
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR(50) PRIMARY KEY, 
-    name VARCHAR(255), 
-    username VARCHAR(255) UNIQUE, 
-    password VARCHAR(255),
-    role VARCHAR(50), 
-    status VARCHAR(50), 
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    role VARCHAR(50) DEFAULT 'staff',
+    status VARCHAR(50) DEFAULT 'active',
     last_login DATETIME
 );
 
+-- 7. Tabel Settings (Konfigurasi Aplikasi)
 CREATE TABLE IF NOT EXISTS settings (
-    setting_key VARCHAR(100) PRIMARY KEY, 
+    setting_key VARCHAR(100) PRIMARY KEY,
     setting_value LONGTEXT
 );
 
--- Hashed password for 'admin22'
-INSERT IGNORE INTO users (id, name, username, password, role, status, last_login) 
-VALUES ('1', 'Admin Utama', 'admin', '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 'admin', 'active', NOW());
+-- Insert Default Admin User jika tabel kosong
+INSERT IGNORE INTO users (id, name, email, role, status, last_login) 
+VALUES ('1', 'Admin', 'admin@smartstock.com', 'admin', 'active', NOW());

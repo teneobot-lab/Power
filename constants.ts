@@ -1,17 +1,15 @@
 
 import { InventoryItem, Supplier, User, AppSettings, TablePreferences } from './types';
 
-export const INITIAL_INVENTORY: InventoryItem[] = [];
+export const INITIAL_INVENTORY: InventoryItem[] = []; // Kosongkan initial state agar tidak bingung dengan data DB
 
 export const INITIAL_SUPPLIERS: Supplier[] = [];
 
-// Default User: admin / admin22
 export const INITIAL_USERS: User[] = [
   {
     id: '1',
-    name: 'Admin Utama',
-    username: 'admin',
-    password: '3d3467611599540c49097e3a2779836183c50937617565437172083626217315', 
+    name: 'Admin',
+    email: 'admin@smartstock.com',
     role: 'admin',
     status: 'active',
     lastLogin: new Date().toISOString()
@@ -19,12 +17,11 @@ export const INITIAL_USERS: User[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  vpsApiUrl: '/api', // Default ke '/api' agar otomatis menggunakan proxy/rewrite
-  viteGasUrl: '', 
+  // Gunakan '/' agar request diarahkan ke Vercel Proxy (sesuai vercel.json)
+  viteGasUrl: '/', 
   youtubeApiKey: '',
   tiktokConfig: '',
-  mediaItems: [],
-  lastSheetSync: ''
+  mediaItems: []
 };
 
 export const DEFAULT_TABLE_PREFS: TablePreferences = {

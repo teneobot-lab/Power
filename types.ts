@@ -19,6 +19,7 @@ export interface InventoryItem {
   status?: 'active' | 'inactive'; 
 }
 
+// Independent Master Data for Rejects
 export interface RejectItem {
   id: string;
   name: string;
@@ -45,8 +46,7 @@ export type UserRole = 'admin' | 'staff' | 'viewer';
 export interface User {
   id: string;
   name: string;
-  username: string; 
-  password?: string;
+  email: string;
   role: UserRole;
   status: 'active' | 'inactive';
   lastLogin?: string;
@@ -62,8 +62,7 @@ export interface MediaItem {
 }
 
 export interface AppSettings {
-  vpsApiUrl: string; // URL VPS / MySQL
-  viteGasUrl: string; // URL Google Sheets / GAS
+  viteGasUrl: string;
   youtubeApiKey: string;
   tiktokConfig: string;
   mediaItems: MediaItem[];

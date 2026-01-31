@@ -7,101 +7,151 @@ interface ApiResponse<T> {
   message?: string;
 }
 
-const buildUrl = (baseUrl: string, path: string): string => {
-    if (!baseUrl) return path;
-    const isGas = baseUrl.includes('script.google.com');
-    if (isGas) return baseUrl;
+interface FullState {
+  inventory: InventoryItem[];
+  transactions: Transaction[];
+  reject_inventory: RejectItem[];
+  rejects: RejectLog[];
+  suppliers: Supplier[];
+  users: User[];
+  settings: Partial<AppSettings>;
+}
 
-    const cleanBase = baseUrl.replace(/\/$/, '');
-    
-    if (cleanBase.startsWith('http')) {
-        const hasApiPrefix = cleanBase.endsWith('/api') || cleanBase.includes('/api/');
-        return hasApiPrefix ? `${cleanBase}${path}` : `${cleanBase}/api${path}`;
-    } else {
-        const normalized = cleanBase === '' || cleanBase === '/' ? '/api' : (cleanBase.startsWith('/') ? cleanBase : `/${cleanBase}`);
-        return `${normalized}${path}`;
-    }
-};
-
-export const fetchBackendData = async (baseUrl: string): Promise<any> => {
+export const fetchBackendData = async (baseUrl: string): Promise<FullState | null> => {
   try {
-    const url = buildUrl(baseUrl, '/data');
-    const response = await fetch(url);
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({ message: 'Server Error' }));
-        throw new Error(err.message || `Error ${response.status}`);
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = baseUrl.includes('script.google.com') ? baseUrl : `${cleanBase}/api/data`;
+
+    console.log(`📡 Fetching data from: ${url}`);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+        console.warn(`⚠️ Backend Issue at ${url}. Received HTML instead of JSON.`);
+        if (response.status === 502) {
+            console.error("❌ Error 502: Vercel tidak bisa menghubungi VPS. Cek Firewall (Port 3000) atau pastikan Server Backend menyala.");
+        }
+        return null;
     }
-    const json = await response.json();
-    return json.data;
+
+    if (!response.ok) {
+        console.warn(`⚠️ HTTP Error: ${response.status} ${response.statusText}`);
+        return null;
+    }
+
+    const json: ApiResponse<FullState> = await response.json();
+    return (json.status === 'success' && json.data) ? json.data : null;
   } catch (error: any) {
-    console.error("Fetch failed:", error.message);
-    throw error;
+    console.warn("⚠️ Offline Mode or Network Error:", error.message);
+    return null;
   }
 };
 
-export const loginUser = async (baseUrl: string, username: string, password: string): Promise<any> => {
-    try {
-        const url = buildUrl(baseUrl, '/login');
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-        const json = await response.json();
-        return { success: response.ok && json.status === 'success', ...json };
-    } catch (error: any) {
-        return { success: false, message: 'Gagal terhubung ke backend.' };
-    }
-};
-
-export const syncBackendData = async (baseUrl: string, type: string, data: any): Promise<any> => {
+export const syncBackendData = async (
+  baseUrl: string, 
+  type: 'inventory' | 'transactions' | 'suppliers' | 'users' | 'settings' | 'rejects', 
+  data: any
+): Promise<{ success: boolean; message?: string }> => {
   try {
-    const url = buildUrl(baseUrl, '/sync');
+    const isGas = baseUrl.includes('script.google.com');
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
+
     const response = await fetch(url, {
       method: 'POST',
       body: JSON.stringify({ type, data }),
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
     });
+
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+        if (response.status === 502) {
+            return { success: false, message: "Error 502: VPS Mati atau Port 3000 tertutup Firewall." };
+        }
+        return { success: false, message: "Server API not found (HTML response)." };
+    }
+
+    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
     const json = await response.json();
-    return { success: response.ok && json.status === 'success', message: json.message };
+    return { success: json.status === 'success', message: json.message };
   } catch (error: any) {
-    return { success: false, message: error.message };
+    return { success: false, message: error.message || 'Network error' };
   }
 };
 
-export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string; dbStatus?: string }> => {
-  if (!baseUrl) return { online: false, message: 'URL Kosong' };
-
-  if (window.location.protocol === 'https:' && baseUrl.startsWith('http:')) {
-      return { 
-          online: false, 
-          message: 'DIBLOKIR BROWSER: Gunakan "/api" (Proxy) karena site ini HTTPS sedangkan VPS menggunakan HTTP.' 
-      };
-  }
-
+export const syncFullToSheets = async (
+  baseUrl: string,
+  fullData: FullState
+): Promise<{ success: boolean; message?: string }> => {
   try {
-    const url = buildUrl(baseUrl, '/health');
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 5000);
-    
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(id);
+    const isGas = baseUrl.includes('script.google.com');
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    const url = isGas ? baseUrl : `${cleanBase}/api/sync`;
 
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'full_sync', data: fullData }),
+      headers: { 'Content-Type': isGas ? 'text/plain' : 'application/json' }
+    });
+
+    if (!response.ok) return { success: false, message: `Server error: ${response.status}` };
+    const json = await response.json();
+    return { success: json.status === 'success', message: json.message };
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Network error' };
+  }
+};
+
+/**
+ * Checks if the backend server is reachable with detail.
+ */
+export const checkServerConnection = async (baseUrl: string): Promise<{ online: boolean; message: string; dbStatus?: 'CONNECTED' | 'DISCONNECTED' | 'UNKNOWN'; latency?: number }> => {
+  try {
+    const start = Date.now();
+    const cleanBase = baseUrl === '/' ? '' : baseUrl.replace(/\/$/, '');
+    
+    // Jika GAS
+    if (baseUrl.includes('script.google.com')) return { online: true, message: 'Google Apps Script URL detected' };
+    
+    // Cek endpoint API Data (karena ini yang diproxy Vercel)
+    const url = baseUrl === '/' ? '/api/data' : `${cleanBase}/api/data`; 
+    
+    console.log("Checking connection to:", url);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 detik timeout
+
+    // Request hanya HEAD atau GET simple jika backend support, tapi disini kita pakai GET data
+    // karena backend kita cek DB saat GET /api/data
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    const latency = Date.now() - start;
+
+    // Cek 502 Bad Gateway (Server Mati / Proxy Gagal)
+    if (response.status === 502) {
+        return { online: false, message: 'Error 502: VPS Port 3000 tertutup atau Server mati.' };
+    }
+    
+    // Cek 503 Service Unavailable (Middleware checkDb di backend)
     if (response.status === 503) {
-        const data = await response.json();
-        return { online: true, dbStatus: 'DISCONNECTED', message: `Server Aktif, tapi MySQL Error: ${data.message}` };
+        return { online: true, message: 'Server Online, tapi Database Gagal', dbStatus: 'DISCONNECTED', latency };
     }
 
     if (response.ok) {
-        const data = await response.json();
-        return { 
-            online: true, 
-            dbStatus: data.database === 'connected' ? 'CONNECTED' : 'DISCONNECTED',
-            message: data.database === 'connected' ? 'Koneksi Sempurna: Server & Database OK' : 'Database MySQL Offline'
-        };
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+             return { online: true, message: `Terhubung (${latency}ms)`, dbStatus: 'CONNECTED', latency };
+        }
+        return { online: true, message: `Server Online (HTML Resp)`, dbStatus: 'UNKNOWN', latency };
+    } else {
+        return { online: false, message: `Server Error: ${response.status}` };
     }
-    return { online: false, message: `Server Merespon Error: ${response.status}` };
-  } catch (e: any) {
-    return { online: false, message: 'VPS Tidak Dapat Dijangkau (Server Mati atau Salah Port).' };
+  } catch (error: any) {
+    return { online: false, message: error.name === 'AbortError' ? 'Koneksi Timeout' : 'Tidak dapat terhubung' };
   }
 };

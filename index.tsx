@@ -1,4 +1,3 @@
-
 import React, { Component, ReactNode, ErrorInfo } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
@@ -12,18 +11,12 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Error Boundary for catching render-time crashes
-// Fixed: Explicitly using Component from react to resolve "Property 'state'/'props' does not exist" errors in TypeScript
+// Error Boundary Sederhana untuk menangkap crash saat render
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  // Use class property for state initialization to resolve property existence issues
-  state: ErrorBoundaryState = {
+  public state: ErrorBoundaryState = {
     hasError: false,
     error: null
   };
-
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-  }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
@@ -34,7 +27,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   render() {
-    // Correctly accessing state and props on the component instance
     if (this.state.hasError) {
       return (
         <div style={{ padding: '2rem', fontFamily: 'sans-serif', color: '#333' }}>

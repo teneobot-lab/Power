@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { User, AppSettings, UserRole } from './types';
-import { generateId, saveToStorage, loadFromStorage } from './utils/storageUtils';
-import { checkServerConnection } from './services/api';
-import { hashPassword } from './utils/security';
-import { Save, Shield, X, Globe, Loader2, Wifi, CheckCircle2, AlertCircle, FileSpreadsheet, RefreshCw, Clock, Database, Trash2, Edit2, Wrench, Download, Upload, RotateCcw } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { User, AppSettings, UserRole, MediaItem } from './types';
+import { generateId } from './utils/storageUtils';
+import { Save, User as UserIcon, Settings, Shield, Plus, Edit2, Trash2, X, Link, Check, MonitorPlay, Youtube, Video, AlertTriangle, CloudLightning, ArrowLeft, Play, ListVideo, Search, Globe, FileSpreadsheet, Loader2 } from 'lucide-react';
 
 interface AdminPanelProps {
   settings: AppSettings;
@@ -17,20 +16,22 @@ interface AdminPanelProps {
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
   settings, onUpdateSettings, 
-  users, onAddUser, onUpdateUser, onDeleteUser, onFullSyncToSheets
+  users, onAddUser, onUpdateUser, onDeleteUser,
+  onFullSyncToSheets
 }) => {
-  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'cloud' | 'migration'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'users' | 'media'>('settings');
   const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
   const [isSaved, setIsSaved] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userFormData, setUserFormData] = useState<Partial<User>>({});
-  
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
-  const [connectionMsg, setConnectionMsg] = useState('');
-
-  const importFileRef = useRef<HTMLInputElement>(null);
+  const [activePlatform, setActivePlatform] = useState<'none' | 'youtube' | 'tiktok'>('none');
+  const [currentVideo, setCurrentVideo] = useState<MediaItem | null>(null);
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaTitle, setMediaTitle] = useState('');
+  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [showAddMedia, setShowAddMedia] = useState(false);
 
   useEffect(() => { setTempSettings(settings); }, [settings]);
 
@@ -40,289 +41,166 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setTimeout(() => setIsSaved(false), 3000);
   };
 
-  const handleTestConnection = async (type: 'vps' | 'gas') => {
-      const url = type === 'vps' ? tempSettings.vpsApiUrl : tempSettings.viteGasUrl;
-      if (!url || url === '/') {
-          setConnectionStatus('failed');
-          setConnectionMsg('URL tidak boleh kosong untuk tes.');
-          return;
-      }
-      setConnectionStatus('checking');
-      const result = await checkServerConnection(url);
-      setConnectionStatus(result.online ? 'success' : 'failed');
-      setConnectionMsg(result.message);
+  const handleFullSync = async () => {
+    if (!onFullSyncToSheets) return;
+    setIsSyncing(true);
+    await onFullSyncToSheets();
+    setIsSyncing(false);
   };
 
-  const handleManualSync = async () => {
-      if (!onFullSyncToSheets) return;
-      setIsSyncing(true);
-      try {
-          const success = await onFullSyncToSheets();
-          if (success) {
-            // Update local timestamp after successful sync
-            setTempSettings(prev => ({ ...prev, lastSheetSync: new Date().toISOString() }));
-          }
-      } catch (e) {
-          console.error("Sync error:", e);
-      } finally {
-          setIsSyncing(false);
-      }
+  const handleUseVercelProxy = () => { setTempSettings(prev => ({ ...prev, viteGasUrl: '/' })); };
+
+  const extractVideoId = (url: string): { type: 'youtube' | 'tiktok', id: string } | null => {
+    const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+    const ytMatch = url.match(ytRegex);
+    if (ytMatch && ytMatch[1]) return { type: 'youtube', id: ytMatch[1] };
+    const ttRegex = /tiktok\.com\/@[\w.-]+\/video\/(\d+)/;
+    const ttMatch = url.match(ttRegex);
+    if (ttMatch && ttMatch[1]) return { type: 'tiktok', id: ttMatch[1] };
+    return null;
   };
 
-  // --- MIGRATION HANDLERS ---
-  const exportAllData = () => {
-    const data = {
-      inventory: loadFromStorage('smartstock_inventory', []),
-      transactions: loadFromStorage('smartstock_transactions', []),
-      reject_inventory: loadFromStorage('smartstock_reject_inventory', []),
-      rejects: loadFromStorage('smartstock_rejects', []),
-      suppliers: loadFromStorage('smartstock_suppliers', []),
-      users: loadFromStorage('smartstock_users', []),
-      settings: loadFromStorage('smartstock_settings', {})
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `PowerInventory_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
+  const handleAddMedia = () => {
+    setMediaError(null);
+    if (!mediaUrl.trim() || !mediaTitle.trim()) { setMediaError("URL dan Judul wajib diisi."); return; }
+    const extraction = extractVideoId(mediaUrl);
+    if (!extraction) { setMediaError("URL tidak valid. Dukungan: YouTube, TikTok (web link)."); return; }
+    if (extraction.type !== activePlatform) { setMediaError(`Mode saat ini adalah ${activePlatform}, tapi tautan yang dimasukkan adalah ${extraction.type}.`); return; }
+    const newMedia: MediaItem = { id: generateId(), type: extraction.type, url: mediaUrl, embedId: extraction.id, title: mediaTitle, addedAt: new Date().toISOString() };
+    const updatedMediaItems = [...(tempSettings.mediaItems || []), newMedia];
+    setTempSettings(prev => ({ ...prev, mediaItems: updatedMediaItems }));
+    onUpdateSettings({ ...tempSettings, mediaItems: updatedMediaItems });
+    setMediaUrl(''); setMediaTitle(''); setShowAddMedia(false); setCurrentVideo(newMedia);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = JSON.parse(evt.target?.result as string);
-        if (confirm("Import data akan menimpa data lokal saat ini. Lanjutkan?")) {
-            if (data.inventory) saveToStorage('smartstock_inventory', data.inventory);
-            if (data.transactions) saveToStorage('smartstock_transactions', data.transactions);
-            if (data.reject_inventory) saveToStorage('smartstock_reject_inventory', data.reject_inventory);
-            if (data.rejects) saveToStorage('smartstock_rejects', data.rejects);
-            if (data.suppliers) saveToStorage('smartstock_suppliers', data.suppliers);
-            if (data.users) saveToStorage('smartstock_users', data.users);
-            if (data.settings) saveToStorage('smartstock_settings', data.settings);
-            alert("Data berhasil diimpor. Aplikasi akan memuat ulang.");
-            window.location.reload();
-        }
-      } catch (err) {
-        alert("Gagal membaca file backup. Pastikan format JSON valid.");
-      }
-    };
-    reader.readAsText(file);
+  const openUserModal = (user?: User) => {
+    if (user) { setEditingUser(user); setUserFormData(user); } 
+    else { setEditingUser(null); setUserFormData({ name: '', email: '', role: 'staff', status: 'active' }); }
+    setIsUserModalOpen(true);
   };
 
-  const resetLocalCache = () => {
-    if (confirm("⚠️ PERINGATAN: Hapus seluruh cache data lokal di browser? Anda akan logout secara otomatis.")) {
-        localStorage.clear();
-        sessionStorage.clear();
-        window.location.reload();
-    }
+  const handleUserSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userFormData.name || !userFormData.email) return;
+    const newUser: User = { id: editingUser ? editingUser.id : generateId(), name: userFormData.name || '', email: userFormData.email || '', role: (userFormData.role as UserRole) || 'staff', status: (userFormData.status as 'active' | 'inactive') || 'active', lastLogin: editingUser ? editingUser.lastLogin : undefined };
+    if (editingUser) onUpdateUser(newUser); else onAddUser(newUser);
+    setIsUserModalOpen(false);
   };
 
   return (
     <div className="space-y-6 animate-fade-in flex flex-col h-full overflow-hidden">
       <div className="flex flex-col md:flex-row gap-6 h-full overflow-hidden">
-        {/* Navigation Sidebar */}
         <div className="w-full md:w-64 flex flex-col gap-2 flex-shrink-0">
-          <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-            <Globe className="w-4 h-4" /> 
-            <span>Pengaturan Server</span>
-          </button>
-          <button onClick={() => setActiveTab('cloud')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'cloud' ? 'bg-emerald-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-            <FileSpreadsheet className="w-4 h-4" /> 
-            <span>Integrasi Sheets</span>
-          </button>
-          <button onClick={() => setActiveTab('migration')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'migration' ? 'bg-amber-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-            <Wrench className="w-4 h-4" /> 
-            <span>Setup & Migrasi</span>
-          </button>
-          <button onClick={() => setActiveTab('users')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-            <Shield className="w-4 h-4" /> 
-            <span>Manajemen Akses</span>
-          </button>
+          <button onClick={() => setActiveTab('settings')} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}><Settings className="w-4 h-4" /> Pengaturan Sistem</button>
+          <button onClick={() => setActiveTab('users')} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'users' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}><Shield className="w-4 h-4" /> Manajemen User</button>
+          <button onClick={() => setActiveTab('media')} className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${activeTab === 'media' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'}`}><MonitorPlay className="w-4 h-4" /> Media Center</button>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1 pb-6">
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
           {activeTab === 'settings' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-               <h2 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-3">
-                 <Database className="w-6 h-6 text-blue-500" /> 
-                 VPS Configuration
-               </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Konfigurasi API Backend untuk sinkronisasi database MySQL.</p>
-               <div className="space-y-6">
-                  <div>
-                    <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Backend API URL</label>
-                    <div className="flex flex-col sm:flex-row gap-3">
-                        <input 
-                            type="text" 
-                            className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono bg-slate-50" 
-                            placeholder="http://178.128.106.33:3000" 
-                            value={tempSettings.vpsApiUrl} 
-                            onChange={(e) => setTempSettings({...tempSettings, vpsApiUrl: e.target.value})} 
-                        />
-                        <button onClick={() => handleTestConnection('vps')} className="px-6 py-3 bg-slate-900 text-white rounded-xl text-sm font-bold hover:bg-slate-800 flex items-center gap-2">
-                           {connectionStatus === 'checking' && activeTab === 'settings' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-                           Tes VPS
-                        </button>
-                    </div>
-                    {connectionMsg && activeTab === 'settings' && (
-                      <div className={`mt-3 p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                          {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                          {connectionMsg}
-                      </div>
-                    )}
-                  </div>
-                  <div className="pt-6 border-t flex items-center gap-4">
-                     <button onClick={handleSaveSettings} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center gap-2 transition-all active:scale-95">
-                        <Save className="w-4 h-4" /> Simpan Pengaturan
-                     </button>
-                     {isSaved && <span className="text-emerald-600 text-sm font-bold animate-pulse"><CheckCircle2 className="inline w-4 h-4 mr-1" /> Tersimpan</span>}
-                  </div>
-               </div>
-            </div>
-          )}
-
-          {activeTab === 'cloud' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-               <h2 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-3">
-                 <FileSpreadsheet className="w-7 h-7 text-emerald-600" /> 
-                 Integrasi Google Sheets
-               </h2>
-               <p className="text-slate-500 text-sm mb-8">Hubungkan aplikasi dengan Google Spreadsheet untuk backup data eksternal.</p>
-               <div className="space-y-8">
-                  <div className="p-6 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                 <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Settings className="w-5 h-5 text-slate-500" /> Konfigurasi Aplikasi</h2>
+                 <div className="space-y-6">
                     <div>
-                        <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Google Apps Script (GAS) URL</label>
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <input 
-                                type="url" 
-                                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-mono" 
-                                placeholder="https://script.google.com/macros/s/.../exec" 
-                                value={tempSettings.viteGasUrl} 
-                                onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} 
-                            />
-                            <button onClick={() => handleTestConnection('gas')} className="px-6 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 flex items-center gap-2">
-                                {connectionStatus === 'checking' && activeTab === 'cloud' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
-                                Tes GAS
-                            </button>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">YouTube Data API Key (Opsional)</label>
+                      <input type="password" className="w-full px-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono" placeholder="AIzaSy..." value={tempSettings.youtubeApiKey || ''} onChange={(e) => setTempSettings({...tempSettings, youtubeApiKey: e.target.value})} />
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                           <label className="block text-sm font-medium text-slate-700">Backend / Cloud URL (GAS atau VPS)</label>
+                           <button onClick={handleUseVercelProxy} className="text-xs flex items-center gap-1 bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-200 hover:bg-emerald-100 transition-colors"><CloudLightning className="w-3 h-3" /> Gunakan Proxy Vercel</button>
+                      </div>
+                      <div className="relative">
+                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input type="url" className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" placeholder="URL Google Apps Script atau IP VPS" value={tempSettings.viteGasUrl} onChange={(e) => setTempSettings({...tempSettings, viteGasUrl: e.target.value})} />
+                      </div>
+                    </div>
+                    <div className="pt-4 border-t flex items-center gap-4">
+                       <button onClick={handleSaveSettings} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-sm flex items-center gap-2 transition-all"><Save className="w-4 h-4" /> Simpan Konfigurasi</button>
+                       {isSaved && <span className="text-emerald-600 text-sm font-medium flex items-center gap-1 animate-in fade-in"><Check className="w-4 h-4" /> Berhasil disimpan!</span>}
+                    </div>
+                 </div>
+              </div>
+
+              {/* Google Sheets Integration Card */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 border-l-4 border-l-emerald-500">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-emerald-100 p-2 rounded-lg">
+                            <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-slate-800">Google Sheets Integration</h3>
+                            <p className="text-xs text-slate-500">Manual synchronization for reporting and backup.</p>
                         </div>
                     </div>
-                    {connectionMsg && activeTab === 'cloud' && (
-                        <div className={`p-3 rounded-lg text-xs font-medium border flex items-center gap-2 ${connectionStatus === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                            {connectionStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                            {connectionMsg}
+                    {settings.lastSheetSync && (
+                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">
+                            LAST SYNC: {new Date(settings.lastSheetSync).toLocaleString()}
+                        </span>
+                    )}
+                </div>
+                
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 mb-6">
+                    <p className="text-sm text-slate-600 leading-relaxed">
+                        Push all your inventory, transactions, and supplier data to the connected Google Spreadsheet. 
+                        This is useful for generating custom reports or keeping an offline backup.
+                    </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={handleFullSync}
+                        disabled={isSyncing || !settings.viteGasUrl}
+                        className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-lg transition-all active:scale-95 disabled:opacity-50 disabled:grayscale"
+                    >
+                        {isSyncing ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Syncing Data...
+                            </>
+                        ) : (
+                            <>
+                                <FileSpreadsheet className="w-5 h-5" />
+                                Sync All Data to Sheets
+                            </>
+                        )}
+                    </button>
+                    {!settings.viteGasUrl && (
+                        <div className="flex items-center gap-2 text-rose-500 text-xs font-medium">
+                            <AlertTriangle className="w-4 h-4" />
+                            Please configure Cloud URL first
                         </div>
                     )}
-                    <button onClick={handleSaveSettings} className="px-6 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800">
-                        Simpan URL GAS
-                    </button>
-                  </div>
-
-                  <div className="p-8 bg-emerald-50/50 rounded-2xl border border-emerald-100 flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex-1 text-center md:text-left">
-                        <h4 className="font-bold text-emerald-800 text-lg flex items-center justify-center md:justify-start gap-2">
-                            <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} /> 
-                            Sinkronisasi Database
-                        </h4>
-                        <p className="text-sm text-emerald-600 mt-1 italic">Tekan tombol untuk mengirim seluruh data ke Spreadsheet sekarang.</p>
-                        {tempSettings.lastSheetSync && (
-                            <div className="mt-2 flex items-center justify-center md:justify-start gap-2 text-[10px] font-bold text-emerald-700/60 uppercase">
-                                <Clock className="w-3 h-3" />
-                                Terakhir Sync: {new Date(tempSettings.lastSheetSync).toLocaleString('id-ID')}
-                            </div>
-                        )}
-                    </div>
-                    <button 
-                        onClick={handleManualSync}
-                        disabled={isSyncing || !tempSettings.viteGasUrl.includes('script.google.com')}
-                        className="w-full md:w-auto px-10 py-5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white rounded-2xl text-sm font-black shadow-xl shadow-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-3"
-                    >
-                        {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileSpreadsheet className="w-5 h-5" />}
-                        SYNC KE SPREADSHEETS
-                    </button>
-                  </div>
-               </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {activeTab === 'migration' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-               <h2 className="text-xl font-extrabold text-slate-800 mb-2 flex items-center gap-3">
-                 <Wrench className="w-6 h-6 text-amber-500" /> 
-                 Setup & Migrasi Data
-               </h2>
-               <p className="text-slate-500 text-sm mb-8 italic">Alat bantu untuk backup, restore, dan inisialisasi aplikasi.</p>
-               
-               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
-                      <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
-                          <Download className="w-6 h-6" />
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-slate-800">Ekspor Backup (.json)</h4>
-                          <p className="text-xs text-slate-500 mt-1">Simpan seluruh database lokal ke file JSON untuk dipindahkan ke perangkat lain.</p>
-                      </div>
-                      <button onClick={exportAllData} className="w-full py-3 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all">Unduh Backup JSON</button>
-                  </div>
-
-                  <div className="p-6 bg-slate-50 border rounded-2xl flex flex-col items-center text-center space-y-4">
-                      <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
-                          <Upload className="w-6 h-6" />
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-slate-800">Impor Backup (.json)</h4>
-                          <p className="text-xs text-slate-500 mt-1">Pulihkan database dari file backup yang telah diunduh sebelumnya.</p>
-                      </div>
-                      <input type="file" ref={importFileRef} className="hidden" accept=".json" onChange={handleImport} />
-                      <button onClick={() => importFileRef.current?.click()} className="w-full py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-all">Pilih File Backup</button>
-                  </div>
-
-                  <div className="p-6 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col items-center text-center space-y-4 md:col-span-2">
-                      <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center">
-                          <RotateCcw className="w-6 h-6" />
-                      </div>
-                      <div>
-                          <h4 className="font-bold text-rose-800">Hapus Cache Lokal Browser</h4>
-                          <p className="text-xs text-rose-600 mt-1">Gunakan ini jika aplikasi tidak responsif atau ingin membersihkan data lokal dari nol.</p>
-                      </div>
-                      <button onClick={resetLocalCache} className="px-8 py-3 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700 shadow-lg shadow-rose-100 transition-all">Reset & Logout</button>
-                  </div>
-               </div>
-            </div>
-          )}
-          
           {activeTab === 'users' && (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-               <div className="flex justify-between items-center mb-6">
-                   <h2 className="text-xl font-extrabold text-slate-800 flex items-center gap-2"><Shield className="w-6 h-6 text-indigo-500" /> Manajemen Akses</h2>
-                   <button onClick={() => { setEditingUser(null); setUserFormData({}); setIsUserModalOpen(true); }} className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700">Tambah User</button>
+            <div className="space-y-4">
+               <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                  <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Shield className="w-5 h-5 text-slate-500" /> User Terdaftar</h2>
+                  <button onClick={() => openUserModal()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium shadow-sm"><Plus className="w-4 h-4" /> Tambah User</button>
                </div>
-               <div className="overflow-hidden border border-slate-100 rounded-xl">
+               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                    <table className="w-full text-left">
-                     <thead className="bg-slate-50 border-b">
-                       <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                     <thead className="bg-slate-50">
+                       <tr className="border-b text-xs font-semibold text-slate-500 uppercase">
                          <th className="px-6 py-4">User</th>
                          <th className="px-6 py-4">Role</th>
                          <th className="px-6 py-4">Status</th>
                          <th className="px-6 py-4 text-right">Aksi</th>
                        </tr>
                      </thead>
-                     <tbody className="divide-y divide-slate-100 text-sm">
+                     <tbody className="divide-y divide-slate-200 text-sm">
                        {users.map(user => (
                          <tr key={user.id} className="hover:bg-slate-50">
-                           <td className="px-6 py-4"><div className="font-bold text-slate-900">{user.name}</div><div className="text-[11px] text-slate-500">@{user.username}</div></td>
-                           <td className="px-6 py-4"><span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">{user.role}</span></td>
+                           <td className="px-6 py-4"><div className="font-medium text-slate-900">{user.name}</div><div className="text-xs text-slate-500">{user.email}</div></td>
+                           <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${user.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-800'}`}>{user.role}</span></td>
                            <td className="px-6 py-4"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{user.status}</span></td>
-                           <td className="px-6 py-4 text-right">
-                             <div className="flex justify-end gap-2">
-                               <button onClick={() => { setEditingUser(user); setUserFormData({ ...user, password: '' }); setIsUserModalOpen(true); }} className="text-slate-400 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button>
-                               <button onClick={() => onDeleteUser(user.id)} className="text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button>
-                             </div>
-                           </td>
+                           <td className="px-6 py-4 text-right"><div className="flex justify-end gap-2"><button onClick={() => openUserModal(user)} className="p-1.5 text-slate-400 hover:text-blue-600"><Edit2 className="w-4 h-4" /></button><button onClick={() => onDeleteUser(user.id)} className="p-1.5 text-slate-400 hover:text-rose-600"><Trash2 className="w-4 h-4" /></button></div></td>
                          </tr>
                        ))}
                      </tbody>
@@ -330,50 +208,74 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                </div>
             </div>
           )}
+
+          {activeTab === 'media' && (
+            <div className="h-[600px] flex flex-col bg-slate-900 rounded-xl overflow-hidden shadow-xl text-white">
+                {activePlatform === 'none' ? (
+                    <div className="flex-1 flex flex-col items-center justify-center p-8">
+                        <h2 className="text-2xl font-bold mb-8">Pilih Hiburan</h2>
+                        <div className="flex gap-8">
+                            {/* Fix: Replaced undefined enterPlatform with the correct state setter setActivePlatform */}
+                            <button onClick={() => setActivePlatform('youtube')} className="p-8 bg-red-600/10 hover:bg-red-600 rounded-2xl border border-red-500/20 transition-all flex flex-col items-center gap-4"><Youtube className="w-12 h-12" /> <span className="font-bold">YouTube</span></button>
+                            {/* Fix: Replaced undefined enterPlatform with the correct state setter setActivePlatform */}
+                            <button onClick={() => setActivePlatform('tiktok')} className="p-8 bg-slate-800 hover:bg-black rounded-2xl border border-slate-700 transition-all flex flex-col items-center gap-4"><Video className="w-12 h-12" /> <span className="font-bold">TikTok</span></button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-col h-full">
+                        <div className="p-4 flex items-center justify-between border-b border-white/10 bg-slate-800">
+                             <div className="flex items-center gap-3">
+                                 <button onClick={() => setActivePlatform('none')} className="p-1 hover:bg-white/10 rounded"><ArrowLeft className="w-5 h-5" /></button>
+                                 <span className="font-bold uppercase tracking-widest">{activePlatform}</span>
+                             </div>
+                             <button onClick={() => setShowAddMedia(true)} className="p-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"><Plus className="w-4 h-4" /></button>
+                        </div>
+                        <div className="flex-1 flex overflow-hidden">
+                             <div className="w-64 border-r border-white/5 overflow-y-auto p-4 space-y-2">
+                                 <h3 className="text-xs font-bold text-slate-500 uppercase mb-4">Playlist</h3>
+                                 {tempSettings.mediaItems.filter(m => m.type === activePlatform).map(m => (
+                                     <button key={m.id} onClick={() => setCurrentVideo(m)} className={`w-full text-left p-2 rounded text-xs truncate hover:bg-white/5 ${currentVideo?.id === m.id ? 'bg-white/10 font-bold' : ''}`}>{m.title}</button>
+                                 ))}
+                             </div>
+                             <div className="flex-1 bg-black relative">
+                                 {showAddMedia && (
+                                     <div className="absolute inset-0 z-20 bg-black/80 flex items-center justify-center p-8">
+                                         <div className="bg-slate-800 p-6 rounded-xl w-full max-w-sm space-y-4">
+                                             <h3 className="font-bold">Tambah Video</h3>
+                                             <input value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} placeholder="URL Video" className="w-full bg-slate-700 p-2 rounded outline-none border border-slate-600 focus:border-blue-500" />
+                                             <input value={mediaTitle} onChange={e => setMediaTitle(e.target.value)} placeholder="Judul" className="w-full bg-slate-700 p-2 rounded outline-none border border-slate-600 focus:border-blue-500" />
+                                             {mediaError && <p className="text-xs text-rose-400">{mediaError}</p>}
+                                             <div className="flex gap-2"><button onClick={() => setShowAddMedia(false)} className="flex-1 py-2 text-slate-400">Batal</button><button onClick={handleAddMedia} className="flex-1 py-2 bg-blue-600 rounded font-bold">Simpan</button></div>
+                                         </div>
+                                     </div>
+                                 )}
+                                 {currentVideo ? (
+                                     <iframe src={activePlatform === 'youtube' ? `https://www.youtube.com/embed/${currentVideo.embedId}?autoplay=1` : `https://www.tiktok.com/embed/v2/${currentVideo.embedId}`} className="w-full h-full" allowFullScreen />
+                                 ) : <div className="w-full h-full flex items-center justify-center text-slate-700 italic">Pilih video dari playlist</div>}
+                             </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+          )}
         </div>
       </div>
-      
-      {/* User Modal */}
-      {isUserModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
-            <div className="px-8 py-6 border-b flex justify-between items-center bg-slate-50/50">
-               <h3 className="font-black text-slate-800 uppercase tracking-tight">{editingUser ? 'Edit User' : 'Tambah User'}</h3>
-               <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-white rounded-full"><X className="w-5 h-5 text-slate-400" /></button>
-            </div>
-            <form onSubmit={async (e) => {
-                 e.preventDefault();
-                 let finalPassword = userFormData.password;
-                 if (userFormData.password && userFormData.password.trim() !== '') {
-                    finalPassword = await hashPassword(userFormData.password);
-                 } else if (editingUser) {
-                    finalPassword = editingUser.password;
-                 } else {
-                    finalPassword = await hashPassword('123456');
-                 }
 
-                 const newUser: User = { 
-                     id: editingUser ? editingUser.id : generateId(), 
-                     name: userFormData.name || '', 
-                     username: userFormData.username || '', 
-                     role: (userFormData.role as UserRole) || 'staff', 
-                     status: (userFormData.status as 'active' | 'inactive') || 'active', 
-                     password: finalPassword
-                 };
-                 if (editingUser) onUpdateUser(newUser); else onAddUser(newUser);
-                 setIsUserModalOpen(false);
-            }} className="p-8 space-y-5">
-               <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nama</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.name || ''} onChange={e => setUserFormData({...userFormData, name: e.target.value})} /></div>
-               <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Username</label><input required className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.username || ''} onChange={e => setUserFormData({...userFormData, username: e.target.value})} /></div>
-               <div>
-                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Password {editingUser ? '(Kosongkan jika tidak diubah)' : ''}</label>
-                   <input type="password" className="w-full px-4 py-2 border rounded-xl text-sm" placeholder={editingUser ? "••••••••" : "Wajib diisi"} value={userFormData.password || ''} onChange={e => setUserFormData({...userFormData, password: e.target.value})} required={!editingUser} />
-               </div>
+      {isUserModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b flex justify-between items-center">
+               <h3 className="font-bold text-slate-800">{editingUser ? 'Edit User' : 'User Baru'}</h3>
+               <button onClick={() => setIsUserModalOpen(false)}><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+            <form onSubmit={handleUserSubmit} className="p-6 space-y-4">
+               <div><label className="block text-sm font-medium text-slate-700 mb-1">Nama Lengkap</label><input required className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userFormData.name} onChange={e => setUserFormData({...userFormData, name: e.target.value})} /></div>
+               <div><label className="block text-sm font-medium text-slate-700 mb-1">Email</label><input required type="email" className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} /></div>
                <div className="grid grid-cols-2 gap-4">
-                  <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Role</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.role || 'staff'} onChange={e => setUserFormData({...userFormData, role: e.target.value as UserRole})}><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
-                  <div><label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Status</label><select className="w-full px-4 py-2 border rounded-xl text-sm" value={userFormData.status || 'active'} onChange={e => setUserFormData({...userFormData, status: e.target.value as any})}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Role</label><select className="w-full px-3 py-2 border rounded-lg outline-none" value={userFormData.role} onChange={e => setUserFormData({...userFormData, role: e.target.value as UserRole})}><option value="staff">Staff</option><option value="admin">Admin</option><option value="viewer">Viewer</option></select></div>
+                  <div><label className="block text-sm font-medium text-slate-700 mb-1">Status</label><select className="w-full px-3 py-2 border rounded-lg outline-none" value={userFormData.status} onChange={e => setUserFormData({...userFormData, status: e.target.value as any})}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
                </div>
-               <div className="pt-6 flex justify-end gap-3"><button type="button" onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold">Batal</button><button type="submit" className="px-8 py-2 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">Simpan</button></div>
+               <div className="pt-4 flex justify-end gap-3"><button type="button" onClick={() => setIsUserModalOpen(false)} className="px-4 py-2 text-slate-600">Batal</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Simpan User</button></div>
             </form>
           </div>
         </div>

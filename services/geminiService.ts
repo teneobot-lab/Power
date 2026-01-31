@@ -2,6 +2,9 @@
 import { GoogleGenAI } from "@google/genai";
 import { InventoryItem } from "../types";
 
+// Initialize AI client as per @google/genai guidelines using process.env.API_KEY
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
 // Helper to format inventory for the model to understand
 const formatInventoryContext = (items: InventoryItem[]): string => {
   return JSON.stringify(items.map(item => ({
@@ -22,8 +25,6 @@ const formatInventoryContext = (items: InventoryItem[]): string => {
  */
 export const getInventoryInsights = async (items: InventoryItem[]): Promise<string> => {
   try {
-    // Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const inventoryData = formatInventoryContext(items);
     
     // Using gemini-3-flash-preview for summarization task as per guidelines
@@ -46,7 +47,7 @@ export const getInventoryInsights = async (items: InventoryItem[]): Promise<stri
     return response.text || "No insights generated.";
   } catch (error) {
     console.error("Gemini Insight Error:", error);
-    return "Failed to generate insights. Check if your API Key is valid and set in environment variables.";
+    return "Failed to generate insights.";
   }
 };
 
@@ -59,13 +60,11 @@ export const chatWithInventoryBot = async (
   items: InventoryItem[]
 ): Promise<string> => {
   try {
-    // Create a new GoogleGenAI instance right before making an API call to ensure it always uses the most up-to-date API key
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const inventoryData = formatInventoryContext(items);
     
-    // Upgraded to gemini-3-pro-preview for complex reasoning, coding, and math tasks
+    // Creating chat with specific system instructions
     const chat = ai.chats.create({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       config: {
         systemInstruction: `
           You are "SmartStock Agent", a highly intelligent and capable AI assistant for a warehouse manager.
@@ -90,10 +89,10 @@ export const chatWithInventoryBot = async (
     // sendMessage automatically manages message contents
     const response = await chat.sendMessage({ message: query });
     
-    // Access .text property directly as per @google/genai documentation
+    // Access .text property directly
     return response.text || "I didn't catch that.";
   } catch (error) {
     console.error("Gemini Chat Error:", error);
-    return "Sorry, I'm having trouble connecting to Gemini. Please check your API Key configuration.";
+    return "Sorry, I'm having trouble connecting.";
   }
 };

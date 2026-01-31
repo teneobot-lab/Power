@@ -3,300 +3,179 @@ const express = require('express');
 const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bodyParser = require('body-parser');
-const crypto = require('crypto');
-require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
-// =======================
-// MIDDLEWARE
-// =======================
+// Middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
-// =======================
-// DATABASE CONFIG
-// =======================
+// Konfigurasi Database (Root tanpa password default)
 const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
+    password: process.env.DB_PASSWORD || '', 
     database: process.env.DB_NAME || 'smartstock_db',
-    dateStrings: true,
-    connectTimeout: 10000,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    dateStrings: true
 };
 
 let pool;
 let dbConnected = false;
-let lastDbError = null;
 
-// =======================
-// UTILS
-// =======================
+// Fungsi Koneksi Database (Retry Pattern)
+async function initDb() {
+    try {
+        pool = mysql.createPool(dbConfig);
+        const connection = await pool.getConnection();
+        console.log('✅ DATABASE TERHUBUNG: SmartStock DB Ready!');
+        dbConnected = true;
+        connection.release();
+    } catch (err) {
+        console.error('❌ DATABASE ERROR:', err.message);
+        dbConnected = false;
+        // Retry setiap 5 detik jika gagal
+        setTimeout(initDb, 5000); 
+    }
+}
+
+// Helper: Snake_case -> CamelCase
 const toCamel = (row) => {
     const res = {};
     for (let key in row) {
         const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
         let val = row[key];
-        if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
-            try { val = JSON.parse(val); } catch {}
+        if (['alternativeUnits', 'items', 'photos'].includes(camel) && typeof val === 'string') {
+            try { val = JSON.parse(val); } catch(e) { val = []; }
         }
         res[camel] = val;
     }
     return res;
 };
 
-const toMysqlDate = (isoString) => {
-    if (!isoString) return null;
-    try {
-        return isoString.replace('T', ' ').split('.')[0].replace('Z', '');
-    } catch (e) {
-        return isoString;
-    }
-};
+// --- ROUTES API ---
 
-// =======================
-// INIT DATABASE
-// =======================
-async function initDb() {
-    try {
-        console.log('🔄 Mencoba koneksi ke database MySQL...');
-        pool = mysql.createPool(dbConfig);
-        
-        const conn = await pool.getConnection();
-        await conn.query('SELECT 1'); 
-        console.log('✅ DATABASE MYSQL TERKONEKSI SEMPURNA');
-        dbConnected = true;
-        lastDbError = null;
-
-        const ADMIN_HASH = crypto
-            .createHash('sha256')
-            .update('admin22')
-            .digest('hex');
-
-        const [rows] = await conn.query("SELECT id FROM users WHERE username = 'admin'");
-        if (rows.length === 0) {
-            console.log('⚠️ Membuat user admin default...');
-            await conn.query(
-                `INSERT INTO users (id, name, username, password, role, status, last_login)
-                 VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-                ['1', 'Admin Utama', 'admin', ADMIN_HASH, 'admin', 'active']
-            );
-        }
-        conn.release();
-    } catch (err) {
-        dbConnected = false;
-        lastDbError = err.message;
-        console.error('❌ DATABASE ERROR:', err.message);
-        setTimeout(initDb, 5000);
-    }
-}
-
-const checkDb = async (req, res, next) => {
-    if (!dbConnected || !pool) {
-        return res.status(503).json({ 
-            status: 'error', 
-            message: `Database Offline: ${lastDbError || 'Koneksi belum siap'}` 
-        });
-    }
-    try {
-        const conn = await pool.getConnection();
-        conn.release();
-        next();
-    } catch (e) {
-        dbConnected = false;
-        lastDbError = e.message;
-        return res.status(503).json({ 
-            status: 'error', 
-            message: `Koneksi database terputus: ${e.message}` 
-        });
-    }
-};
-
-// =======================
-// ROUTES
-// =======================
-
-app.get(['/', '/api', '/api/health', '/health'], async (req, res) => {
-    let dbStatus = 'offline';
-    let dbMessage = lastDbError;
-    if (dbConnected && pool) {
-        try {
-            const conn = await pool.getConnection();
-            await conn.query('SELECT 1');
-            conn.release();
-            dbStatus = 'connected';
-            dbMessage = 'MySQL is healthy';
-        } catch (e) {
-            dbStatus = 'error';
-            dbMessage = e.message;
-        }
-    }
+// 1. Cek Status Server (Health Check)
+app.get('/', (req, res) => {
     res.json({
         status: 'online',
-        database: dbStatus,
-        db_message: dbMessage,
-        vps_time: new Date().toISOString()
+        message: 'SmartStock Server Berjalan!',
+        port: PORT,
+        database_status: dbConnected ? 'CONNECTED' : 'DISCONNECTED (Retrying...)'
     });
 });
 
-app.get(['/api/data', '/data'], checkDb, async (req, res) => {
+// Middleware Check DB
+const checkDb = (req, res, next) => {
+    if (!pool || !dbConnected) {
+        return res.status(503).json({ 
+            status: 'error', 
+            message: 'Database belum terhubung. Pastikan MySQL berjalan dan user/pass benar.' 
+        });
+    }
+    next();
+};
+
+// 2. Ambil Data
+app.get('/api/data', checkDb, async (req, res) => {
     try {
-        const [inventory] = await pool.query('SELECT * FROM inventory');
-        const [transactions] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
-        const [reject_inventory] = await pool.query('SELECT * FROM reject_inventory');
-        const [rejects] = await pool.query('SELECT * FROM rejects');
-        const [suppliers] = await pool.query('SELECT * FROM suppliers');
-        const [users] = await pool.query('SELECT * FROM users');
-        const [settingsRows] = await pool.query('SELECT * FROM settings');
-        
+        const [inv] = await pool.query('SELECT * FROM inventory');
+        const [tx] = await pool.query('SELECT * FROM transactions ORDER BY timestamp DESC');
+        const [rejInv] = await pool.query('SELECT * FROM reject_inventory');
+        const [rejLogs] = await pool.query('SELECT * FROM rejects ORDER BY timestamp DESC');
+        const [sup] = await pool.query('SELECT * FROM suppliers');
+        const [usr] = await pool.query('SELECT * FROM users');
+        const [setRows] = await pool.query('SELECT * FROM settings');
+
         const settings = {};
-        settingsRows.forEach(row => {
-            try {
-                settings[row.setting_key] = JSON.parse(row.setting_value);
-            } catch (e) {
-                settings[row.setting_key] = row.setting_value;
-            }
+        setRows.forEach(r => {
+            let v = r.setting_value;
+            try { if(v.startsWith('[') || v.startsWith('{')) v = JSON.parse(v); } catch(e){}
+            settings[r.setting_key] = v;
         });
 
         res.json({
             status: 'success',
             data: {
-                inventory: inventory.map(toCamel),
-                transactions: transactions.map(toCamel),
-                reject_inventory: reject_inventory.map(toCamel),
-                rejects: rejects.map(toCamel),
-                suppliers: suppliers.map(toCamel),
-                users: users.map(toCamel),
-                settings: settings
+                inventory: inv.map(toCamel),
+                transactions: tx.map(toCamel),
+                reject_inventory: rejInv.map(toCamel),
+                rejects: rejLogs.map(toCamel),
+                suppliers: sup.map(toCamel),
+                users: usr.map(toCamel),
+                settings
             }
         });
-    } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Gagal mengambil data: ' + err.message });
+    } catch (e) {
+        console.error('GET Error:', e);
+        res.status(500).json({ status: 'error', message: e.message });
     }
 });
 
-app.post(['/api/login', '/login'], checkDb, async (req, res) => {
-    const { username, password } = req.body;
-    try {
-        const [rows] = await pool.query('SELECT * FROM users WHERE username = ? LIMIT 1', [username]);
-        if (rows.length === 0) return res.status(401).json({ status: 'error', message: 'User tidak ditemukan' });
-        
-        const user = rows[0];
-        const dbPassword = user.password || '';
-        const inputHash = crypto.createHash('sha256').update(password).digest('hex');
-
-        if (dbPassword === password || dbPassword === inputHash) {
-            await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id]);
-            return res.json({ status: 'success', data: toCamel(user) });
-        }
-        return res.status(401).json({ status: 'error', message: 'Password salah' });
-    } catch (err) {
-        res.status(500).json({ status: 'error', message: 'Auth error: ' + err.message });
-    }
-});
-
-app.post(['/api/sync', '/sync'], checkDb, async (req, res) => {
+// 3. Sync Data
+app.post('/api/sync', checkDb, async (req, res) => {
     const { type, data } = req.body;
-    
-    // Perbaikan Validasi: settings dikirim sebagai Object, sisanya sebagai Array
-    if (!type || !data) {
-        return res.status(400).json({ status: 'error', message: 'Data sync tidak lengkap' });
-    }
-    
-    if (type !== 'settings' && !Array.isArray(data)) {
-        return res.status(400).json({ status: 'error', message: `Data sync untuk ${type} harus berupa array` });
-    }
-
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
+        const mapCols = (s) => {
+            const m = { 
+                'baseUnit':'base_unit', 'minLevel':'min_level', 'unitPrice':'unit_price', 
+                'lastUpdated':'last_updated', 'supplierName':'supplier_name', 
+                'poNumber':'po_number', 'riNumber':'ri_number',
+                'alternativeUnits': 'alternative_units', 'contactPerson': 'contact_person',
+                'lastLogin': 'last_login', 'unit2': 'unit2', 'ratio2': 'ratio2',
+                'unit3': 'unit3', 'ratio3': 'ratio3'
+            };
+            return m[s] || s.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`);
+        };
 
-        if (type === 'inventory') {
-            await conn.query('DELETE FROM inventory');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO inventory (id, sku, name, category, quantity, base_unit, alternative_units, min_level, unit_price, location, last_updated, status)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [item.id, item.sku, item.name, item.category, item.quantity, item.baseUnit, JSON.stringify(item.alternativeUnits || []), item.minLevel, item.unitPrice, item.location, toMysqlDate(item.lastUpdated), item.status || 'active']
-                );
+        if (type === 'settings') {
+            await conn.query('DELETE FROM settings');
+            for (let k in data) {
+                let v = data[k];
+                if (typeof v === 'object') v = JSON.stringify(v);
+                await conn.query('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)', [k, v]);
             }
-        } else if (type === 'transactions') {
-            await conn.query('DELETE FROM transactions');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO transactions (id, date, type, items, notes, timestamp, supplier_name, po_number, ri_number, photos)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [item.id, item.date, item.type, JSON.stringify(item.items), item.notes, toMysqlDate(item.timestamp), item.supplierName, item.poNumber, item.riNumber, JSON.stringify(item.photos || [])]
-                );
-            }
-        } else if (type === 'reject_inventory') {
-            await conn.query('DELETE FROM reject_inventory');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO reject_inventory (id, sku, name, base_unit, unit2, ratio2, unit3, ratio3, last_updated)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                    [item.id, item.sku, item.name, item.baseUnit, item.unit2, item.ratio2, item.unit3, item.ratio3, toMysqlDate(item.lastUpdated)]
-                );
-            }
-        } else if (type === 'rejects') {
-            await conn.query('DELETE FROM rejects');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO rejects (id, date, items, notes, timestamp)
-                     VALUES (?, ?, ?, ?, ?)`,
-                    [item.id, item.date, JSON.stringify(item.items), item.notes, toMysqlDate(item.timestamp)]
-                );
-            }
-        } else if (type === 'suppliers') {
-            await conn.query('DELETE FROM suppliers');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO suppliers (id, name, contact_person, email, phone, address)
-                     VALUES (?, ?, ?, ?, ?, ?)`,
-                    [item.id, item.name, item.contactPerson, item.email, item.phone, item.address]
-                );
-            }
-        } else if (type === 'users') {
-            await conn.query('DELETE FROM users');
-            for (const item of data) {
-                await conn.query(
-                    `INSERT INTO users (id, name, username, password, role, status, last_login)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [item.id, item.name, item.username, item.password, item.role, item.status, toMysqlDate(item.lastLogin)]
-                );
-            }
-        } else if (type === 'settings') {
-            // Logika untuk menyimpan Object Settings
-            for (const [key, value] of Object.entries(data)) {
-                await conn.query(
-                    `INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) 
-                     ON DUPLICATE KEY UPDATE setting_value = ?`,
-                    [key, JSON.stringify(value), JSON.stringify(value)]
-                );
+        } else {
+            let table = type;
+            if (type === 'inventory') table = 'inventory';
+            if (type === 'transactions') table = 'transactions';
+            if (type === 'rejectItems' || type === 'reject_inventory') table = 'reject_inventory';
+            if (type === 'rejectLogs' || type === 'rejects') table = 'rejects';
+            if (type === 'suppliers') table = 'suppliers';
+            if (type === 'users') table = 'users';
+            
+            await conn.query(`DELETE FROM \`${table}\``);
+            
+            if (data && data.length > 0) {
+                const keys = Object.keys(data[0]);
+                const cols = keys.map(mapCols);
+                const values = data.map(item => keys.map(k => {
+                    let v = item[k];
+                    if (typeof v === 'object' && v !== null) return JSON.stringify(v);
+                    if (typeof v === 'string' && v.includes('T') && v.length > 20) return v.slice(0, 19).replace('T', ' ');
+                    return v;
+                }));
+                await conn.query(`INSERT INTO \`${table}\` (${cols.map(c => `\`${c}\``).join(',')}) VALUES ?`, [values]);
             }
         }
-
         await conn.commit();
-        res.json({ status: 'success', message: `Sinkronisasi ${type} ke MySQL berhasil` });
-    } catch (err) {
+        console.log(`✅ SYNC: ${type}`);
+        res.json({ status: 'success' });
+    } catch (e) {
         await conn.rollback();
-        console.error(`❌ Sync ${type} Gagal:`, err.message);
-        res.status(500).json({ 
-            status: 'error', 
-            message: `Gagal Sinkronisasi ${type}: ${err.message}` 
-        });
+        console.error(`❌ SYNC FAIL:`, e.message);
+        res.status(500).json({ status: 'error', message: e.message });
     } finally {
         conn.release();
     }
 });
 
+// PENTING: Start Server SEBELUM Database connect
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 SERVER POWER INVENTORY RUNNING ON PORT ${PORT}`);
+    console.log(`🚀 SERVER BERJALAN DI PORT ${PORT}`);
 });
 
+// Mulai koneksi database di background
 initDb();
